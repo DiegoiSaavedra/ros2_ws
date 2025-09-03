@@ -4,8 +4,8 @@
 Launch file for the LD19 LiDAR.
 
 The node optionally publishes a static transform between ``base_link`` and
-``base_laser``.  Set the ``publish_tf`` launch argument to ``false`` when the
-transform is provided elsewhere (e.g. in an external bringup launch file).
+``base_laser``.  Set the ``publish_tf`` launch argument to ``true`` when the
+transform is not provided elsewhere (e.g. in an external bringup launch file).
 """
 
 from launch import LaunchDescription
@@ -48,7 +48,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("publish_tf", default_value="true"),
+            DeclareLaunchArgument("publish_tf", default_value="false"),
             ldlidar_node,
             base_link_to_laser_tf_node,
         ]
