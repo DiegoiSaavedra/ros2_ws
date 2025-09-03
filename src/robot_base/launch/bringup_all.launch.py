@@ -87,7 +87,8 @@ def generate_launch_description():
     lidar_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory('ldlidar_stl_ros2'), 'launch', 'ld19.launch.py')
-        )
+        ),
+        launch_arguments={'publish_tf': 'false'}.items()
     )
 
     static_laser_tf = Node(
