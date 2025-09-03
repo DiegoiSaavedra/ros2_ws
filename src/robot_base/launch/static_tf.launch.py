@@ -9,7 +9,7 @@ def generate_launch_description():
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_laser_tf',
-            arguments=['0.0', '0.0', '0.18', '0.0', '0.0', '0.0', 'base_link', 'laser']
+            arguments=['0.0', '0.0', '0.18', '0.0', '0.0', '0.0', 'base_link', 'base_laser']
         )
     ])
 
