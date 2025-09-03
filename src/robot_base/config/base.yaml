@@ -1,0 +1,10 @@
+base_driver:
+  ros__parameters:
+    port: "/dev/ttyACM0"   # el que te funcionó
+    baud: 115200
+    wheel_radius: 0.035
+    base_width: 0.145
+    ticks_per_revolution: 4532
+    cmd_timeout: 0.5
+    verbose_serial: false
+

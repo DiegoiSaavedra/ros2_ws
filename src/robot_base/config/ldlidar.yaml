@@ -1,0 +1,22 @@
+/**:
+  ros__parameters:
+    general:
+      debug_mode: false
+
+    comm:
+      serial_port: "/dev/ttyUSB0"     # o "/dev/ldlidar" si creaste la regla udev
+      baudrate: 230400
+      timeout_msec: 1000
+
+    lidar:
+      model: "LDLiDAR_LD19"           # <- ¡IMPORTANTE!
+      rot_verse: "CCW"                # CCW suele ser lo correcto
+      units: "M"
+      frame_id: "base_laser"
+      bins: 455                         # 0 = tamaño dinámico
+      range_min: 0.03
+      range_max: 15.0
+      enable_angle_crop: false
+      angle_crop_min: 90.0
+      angle_crop_max: 270.0
+

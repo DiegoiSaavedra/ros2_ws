@@ -1,0 +1,49 @@
+ekf_odom:
+  ros__parameters:
+    frequency: 50.0
+    sensor_timeout: 0.2
+    two_d_mode: true
+    publish_tf: false        # <- usa el TF del base_driver
+    debug: true
+    print_diagnostics: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # SOLO POSE de odom (x,y,yaw). NADA de velocidades al principio.
+    odom0: /odom
+    odom0_config: [true, true, false,   # x y z
+                   false, false, true,  # roll pitch yaw
+                   false, false, false, # vx vy vz
+                   false, false, false, # vroll vpitch vyaw
+                   false, false, false] # ax ay az
+    odom0_differential: false
+    odom0_relative: false
+
+    # Sin IMU por ahora
+    # imu0: /imu/data
+    # imu0_config: [false, false, false,
+    #               false,  false,  true,
+    #               false, false, false,
+    #               false,  false,  true,
+    #               false, false, false]
+    # imu0_differential: false
+    # imu0_relative: false
+    # imu0_remove_gravitational_acceleration: true
+
+    # Todas FLOAT
+    process_noise_covariance: [0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.02, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 1e6, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 50.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0, 50.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0, 0.0, 0.05]
+
+    initial_estimate_covariance: [1e-3, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                  0.0, 1e-3, 0.0, 0.0, 0.0, 0.0,
+                                  0.0, 0.0, 1e6, 0.0, 0.0, 0.0,
+                                  0.0, 0.0, 0.0, 1e3, 0.0, 0.0,
+                                  0.0, 0.0, 0.0, 0.0, 1e3, 0.0,
+                                  0.0, 0.0, 0.0, 0.0, 0.0, 1e-2]

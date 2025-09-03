@@ -1,0 +1,24 @@
+lsm303_l3gd20_imu:
+  ros__parameters:
+    bus: 1
+    addr_acc: 0x19
+    addr_mag: 0x1E
+    addr_gyr: 0x69
+    frame_id: imu_link
+    rate: 100.0
+
+    # Bias iniciales (ajusta tras calibrar)
+    accel_bias_x: 0.0
+    accel_bias_y: 0.0
+    accel_bias_z: 0.0
+    gyro_bias_x: 0.0
+    gyro_bias_y: 0.0
+    gyro_bias_z: -0.8176
+
+    # Calibración de magnetómetro (rellenar con mag_calibrator)
+    mag_bias_x: 68.5
+    mag_bias_y: 91.5
+    mag_bias_z: 77.5
+    mag_scale_x: 0.7813765182186235
+    mag_scale_y: 0.9897435897435898
+    mag_scale_z: 1.4087591240875912

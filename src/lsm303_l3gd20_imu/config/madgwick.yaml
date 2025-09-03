@@ -1,0 +1,7 @@
+imu_filter_madgwick:
+  ros__parameters:
+    use_mag: false          # usa el magnetómetro
+    world_frame: "enu"     # o "ned" si prefieres
+    publish_tf: false      # el TF ya lo publica el static_transform_publisher
+
+
