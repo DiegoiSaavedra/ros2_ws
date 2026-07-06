@@ -14,16 +14,14 @@ def generate_launch_description():
         name='lsm303_l3gd20_imu',
         output='screen',
         parameters=[imu_params],
-        # Si ALGÚN día publicas en relativos, puedes mapear aquí:
-        # remappings=[
-        #     ('imu/data_raw', '/imu/data_raw'),
-        #     ('imu/mag', '/mag'),
-        # ],
+        respawn=True,
+        respawn_delay=2.0,
     )
 
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
+        name='static_tf_imu',
         arguments=[
             '--x', '0', '--y', '0', '--z', '0',
             '--roll', '0', '--pitch', '0', '--yaw', '0',

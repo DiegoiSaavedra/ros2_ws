@@ -30,13 +30,14 @@ ekf_odom:
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015
     ]
 
-    # ODOM de ruedas: se fusiona el twist (vx, vyaw) en vez de la pose.
+    # ODOM de ruedas: se fusiona el twist (vx, vy, vyaw) en vez de la pose.
     # La pose de encoders acumula error sin que su covarianza crezca;
     # con velocidades el EKF integra y modela la incertidumbre correctamente.
+    # vy=0 va como restricción no-holonómica (varianza chica en el driver).
     odom0: /odom
     odom0_config: [false, false, false,
                    false, false, false,
-                   true,  false, false,
+                   true,  true,  false,
                    false, false, true,
                    false, false, false]
     odom0_differential: false

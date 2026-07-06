@@ -81,8 +81,9 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_laser',
-        arguments=[laser_x, laser_y, laser_z, laser_roll, laser_pitch, laser_yaw,
-                   base_link_frame, laser_frame],
+        arguments=['--x', laser_x, '--y', laser_y, '--z', laser_z,
+                   '--roll', laser_roll, '--pitch', laser_pitch, '--yaw', laser_yaw,
+                   '--frame-id', base_link_frame, '--child-frame-id', laser_frame],
         condition=IfCondition(publish_laser_tf)
     )
 
@@ -98,6 +99,7 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
+        arguments=['-d', os.path.join(pkg_share, 'rviz', '11.rviz')],
         condition=IfCondition(use_rviz)
     )
 

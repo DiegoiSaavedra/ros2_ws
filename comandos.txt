@@ -47,7 +47,9 @@ ros2 launch robot_base principal.launch.py use_rviz:=true
 # Lanzar SOLO el driver de la base (para probar motores/odometria):
 ros2 launch robot_base base_driver.launch.py
 
-# Para detener todo: Ctrl+C en el terminal donde lanzaste.
+# Para detener todo: Ctrl+C en el terminal donde lanzaste. Si sospechas
+# que quedo algo vivo (o cerraste el terminal de golpe), usa:
+bash ~/ros2_ws2/ros2_ws/detener_robot.sh
 
 
 --------------------------------------------------------------------------------
@@ -74,7 +76,7 @@ ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
 ros2 topic list
 
 # --- Odometria de ruedas (la publica base_driver) ---
-ros2 topic hz /odom            # debe marcar ~50 Hz
+ros2 topic hz /odom            # debe marcar ~20 Hz (frecuencia del ESP32)
 ros2 topic echo /odom --once   # posicion x,y y orientacion
 # PRUEBA: al arrancar, x e y deben ser ~0.0 (sin saltos gigantes).
 # Empuja el robot 1 metro a mano: x debe subir ~1.0.
@@ -199,8 +201,7 @@ PROBLEMA: El robot no responde a cmd_vel
 PROBLEMA: Un topico publica al DOBLE de frecuencia (ej: IMU a 200 Hz)
   -> Hay nodos duplicados de un bringup anterior que no murio bien.
   -> Mira: ros2 node list  (nombres repetidos o con sufijos raros)
-  -> Limpieza: pkill -f base_driver; pkill -f imu_node; \
-     pkill -f ldlidar; pkill -f ekf_node; pkill -f slam_toolbox
+  -> Limpieza: bash ~/ros2_ws2/ros2_ws/detener_robot.sh   y relanzar.
   -> Para evitarlo: cierra el bringup siempre con Ctrl+C en su terminal
      (no cierres el terminal de golpe ni uses kill al launch).
 

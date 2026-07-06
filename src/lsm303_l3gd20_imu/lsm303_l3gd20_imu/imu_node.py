@@ -82,13 +82,19 @@ class IMUNode(Node):
             mz_scale=self.declare_parameter('mag_scale_z', 1.0).get_parameter_value().double_value,
         )
 
-        # Imprime el valor del bias que realmente se cargó para verificar
-        self.get_logger().info(f"========== VALOR DE GYRO_BIAS_Z CARGADO: {self.bias.gz} ==========")
+        self.get_logger().info(
+            f"Bias gyro (dps): x={self.bias.gx} y={self.bias.gy} z={self.bias.gz}")
+
+        self.auto_bias = self.declare_parameter(
+            'gyro_auto_bias_on_start', True).get_parameter_value().bool_value
 
         self.bus = SMBus(self.bus_num)
         self._init_accel()
         self._init_mag()
         self._init_gyro()
+
+        if self.auto_bias:
+            self._auto_calibrate_gyro()
 
         self.pub_imu = self.create_publisher(Imu, 'imu/data_raw', 10)
         self.pub_mag = self.create_publisher(MagneticField, 'mag', 10)
@@ -98,7 +104,8 @@ class IMUNode(Node):
 
     # ---------- Init devices ----------
     def _init_accel(self):
-        self._write(self.addr_acc, CTRL_REG1_A, 0b01010111)
+        # 0b01100111 = ODR 200 Hz, ejes XYZ on (se lee a 100 Hz: sin duplicados)
+        self._write(self.addr_acc, CTRL_REG1_A, 0b01100111)
         self._write(self.addr_acc, CTRL_REG4_A, 0b00000000)
 
     def _init_mag(self):
@@ -108,8 +115,43 @@ class IMUNode(Node):
         self._write(self.addr_mag, MR_REG_M, 0b00000000)
 
     def _init_gyro(self):
-        self._write(self.addr_gyr, CTRL_REG1_G, 0b00001111)
+        # 0b01001111 = ODR 190 Hz, ejes XYZ on (se lee a 100 Hz: sin duplicados)
+        self._write(self.addr_gyr, CTRL_REG1_G, 0b01001111)
         self._write(self.addr_gyr, CTRL_REG4_G, 0b00000000)
+
+    def _auto_calibrate_gyro(self, duration=2.0):
+        # El bias del gyro cambia con la temperatura; el valor del YAML
+        # queda desactualizado en horas. Como el robot siempre arranca
+        # quieto, se mide aqui y se reemplaza el bias configurado.
+        n = 0
+        sx = sy = sz = 0.0
+        sq = 0.0
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < duration:
+            b = self._read_block(self.addr_gyr, OUT_X_L_G, 6)
+            x = self._twos_comp_16(b[1], b[0]) * 0.00875
+            y = self._twos_comp_16(b[3], b[2]) * 0.00875
+            z = self._twos_comp_16(b[5], b[4]) * 0.00875
+            sx += x; sy += y; sz += z
+            sq += z * z
+            n += 1
+            time.sleep(0.005)
+        if n < 50:
+            self.get_logger().warning('Auto-bias: pocas muestras; se usa el bias del YAML')
+            return
+        mz = sz / n
+        std_z = math.sqrt(max(sq / n - mz * mz, 0.0))
+        if std_z > 0.5:  # dps: hay vibracion/movimiento, no es confiable
+            self.get_logger().warning(
+                f'Auto-bias: robot en movimiento (desv={std_z:.2f} dps); se usa el bias del YAML')
+            return
+        old = (self.bias.gx, self.bias.gy, self.bias.gz)
+        self.bias.gx = sx / n
+        self.bias.gy = sy / n
+        self.bias.gz = mz
+        self.get_logger().info(
+            f'Auto-bias gyro (dps): {old} -> '
+            f'({self.bias.gx:.4f}, {self.bias.gy:.4f}, {self.bias.gz:.4f}) con {n} muestras')
 
     # ---------- I2C helpers ----------
     def _write(self, addr, reg, val):
