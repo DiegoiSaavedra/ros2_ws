@@ -123,6 +123,28 @@ ros2 run nav2_map_server map_saver_cli -f ~/ros2_ws2/ros2_ws/maps/mi_mapa
 
 
 --------------------------------------------------------------------------------
+ 5b. CAMARA REALSENSE D435 (opcional, ya instalada y configurada)
+--------------------------------------------------------------------------------
+
+# Conectar la camara a un puerto USB 3.0 (los AZULES) con cable corto
+# y de buena calidad (con cables malos da errores raros de conexion).
+
+# Lanzarla (aparte del bringup, en otro terminal):
+ros2 launch robot_base camera.launch.py
+
+# Verificar que publica:
+ros2 topic hz /camera/camera/color/image_raw        # ~30 Hz
+ros2 topic hz /camera/camera/depth/image_rect_raw   # ~30 Hz
+
+# Verla en RViz: Add -> Image (topico color de arriba) o
+# Add -> PointCloud2 (topico /camera/camera/depth/color/points)
+
+# OJO: cuando la montes fisicamente, medir su posicion y corregir el
+# TF en src/robot_base/launch/camera.launch.py (como se hizo con IMU
+# y lidar). La posicion actual es provisoria.
+
+
+--------------------------------------------------------------------------------
  6. COMPILAR (solo cuando cambias codigo)
 --------------------------------------------------------------------------------
 
