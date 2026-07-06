@@ -32,9 +32,10 @@ ros2 pkg prefix lsm303_l3gd20_imu
 
 Conecta el Arduino (USB) y el lidar (USB) ANTES de lanzar.
 
-# Verificar que los dispositivos existen:
-ls /dev/ttyACM0     # Arduino (motores + encoders)
-ls /dev/ttyUSB0     # Lidar LD19
+# Verificar que los dispositivos existen (symlinks estables via udev,
+# no importa el orden en que los conectes):
+ls /dev/esp32       # ESP32 (motores + encoders)
+ls /dev/ldlidar     # Lidar LD19
 ls /dev/i2c-1       # IMU (siempre esta, va soldada al bus I2C)
 
 # Lanzar TODO (base + IMU + lidar + EKF + SLAM, sin RViz):
@@ -166,14 +167,16 @@ git checkout -- ruta/del/archivo.py
 PROBLEMA: "Package 'robot_base' not found"
   -> El terminal no cargo el entorno. Ejecuta:  source ~/.bashrc
 
-PROBLEMA: "No se pudo abrir /dev/ttyACM0"
-  -> El Arduino no esta conectado, o cambio de nombre (mira: ls /dev/ttyACM*).
+PROBLEMA: "No se pudo abrir /dev/esp32"
+  -> El ESP32 no esta conectado. Mira: ls -l /dev/esp32 /dev/ttyACM*
+  -> El symlink lo crea /etc/udev/rules.d/99-esp32.rules
+     (reinstalar con: sudo bash ~/ros2_ws2/ros2_ws/instalar_udev_esp32.sh)
   -> El puerto se configura en: src/robot_base/config/base.yaml
   -> El nodo reintenta solo cada 2 segundos, no hace falta relanzar.
 
 PROBLEMA: El lidar no publica /scan
-  -> Mira: ls /dev/ttyUSB*  (el LD19 usa /dev/ttyUSB0 a 230400 baud)
-  -> Tambien existe el symlink /dev/ldlidar (regla udev).
+  -> Mira: ls -l /dev/ldlidar /dev/ttyUSB*  (LD19 a 230400 baud)
+  -> El symlink lo crea /etc/udev/rules.d/99-ldlidar.rules
 
 PROBLEMA: La odometria gira sola con el robot quieto
   -> El bias del gyro cambio (pasa con la temperatura). Recalibrar:

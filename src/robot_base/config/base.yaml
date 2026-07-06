@@ -1,6 +1,6 @@
 base_driver:
   ros__parameters:
-    port: "/dev/ttyACM0"   # el que te funcionó
+    port: "/dev/esp32"   # symlink estable (regla udev 99-esp32.rules)
     baud: 115200
     wheel_radius: 0.035
     base_width: 0.145
