@@ -37,13 +37,14 @@ ls /dev/ttyACM0     # Arduino (motores + encoders)
 ls /dev/ttyUSB0     # Lidar LD19
 ls /dev/i2c-1       # IMU (siempre esta, va soldada al bus I2C)
 
-# Lanzar TODO (base + IMU + lidar + EKF + SLAM + RViz):
+# Lanzar TODO (base + IMU + lidar + EKF + SLAM, sin RViz):
 ros2 launch robot_base principal.launch.py
 
-# Lo mismo pero SIN RViz (recomendado en la Pi, ahorra CPU):
-ros2 launch robot_base bringup_all.launch.py use_rviz:=false \
-    slam_params_file:=/home/diego/ros2_ws2/ros2_ws/config/mapper_params_online_async.yaml \
-    laser_frame:=base_laser
+# Con RViz en la Pi (consume CPU; mejor visualizar desde otra PC):
+ros2 launch robot_base principal.launch.py use_rviz:=true
+
+# Lanzar SOLO el driver de la base (para probar motores/odometria):
+ros2 launch robot_base base_driver.launch.py
 
 # Para detener todo: Ctrl+C en el terminal donde lanzaste.
 
@@ -214,12 +215,12 @@ PROBLEMA: La Pi va lenta durante el SLAM
     robot_base/base_driver.py              <- nodo motores/odometria
     config/base.yaml                       <- puerto serial, radio rueda, etc.
     config/ekf_odom.yaml                   <- fusion de sensores (EKF)
+    config/mapper_params_online_async.yaml <- parametros de SLAM
     launch/principal.launch.py             <- LANZADOR PRINCIPAL
     launch/bringup_all.launch.py           <- bringup con argumentos
   src/lsm303_l3gd20_imu/                   <- driver de la IMU
     config/imu_params.yaml                 <- calibracion (biases del gyro/mag)
   src/ldlidar_stl_ros2-3.0.3/              <- driver del lidar LD19
-  config/mapper_params_online_async.yaml   <- parametros de SLAM
   maps/                                    <- mapas guardados
 
 ~/archivo_ws_viejos/                       <- workspaces viejos archivados

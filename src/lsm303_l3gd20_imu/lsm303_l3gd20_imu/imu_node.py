@@ -16,7 +16,7 @@ except Exception:
 # ================= I2C addresses =================
 ADDR_ACC = 0x19  # LSM303DLHC accelerometer
 ADDR_MAG = 0x1E  # LSM303DLHC magnetometer
-ADDR_GYR = 0x6B  # L3GD20 gyro (0x6A if SA0=GND)
+ADDR_GYR = 0x69  # gyro (este hardware responde en 0x69; ver imu_params.yaml)
 
 # ============== LSM303DLHC registers =============
 # Accelerometer
@@ -102,7 +102,8 @@ class IMUNode(Node):
         self._write(self.addr_acc, CTRL_REG4_A, 0b00000000)
 
     def _init_mag(self):
-        self._write(self.addr_mag, CRA_REG_M, 0b00010000)
+        # 0b00011000 = 75 Hz de data rate (antes 15 Hz, se leia repetido)
+        self._write(self.addr_mag, CRA_REG_M, 0b00011000)
         self._write(self.addr_mag, CRB_REG_M, 0b00100000)
         self._write(self.addr_mag, MR_REG_M, 0b00000000)
 
