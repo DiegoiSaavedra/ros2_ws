@@ -192,6 +192,14 @@ PROBLEMA: El robot no responde a cmd_vel
   -> 2. Verifica que llega el topico:      ros2 topic echo /cmd_vel
   -> 3. Mira los logs del bringup, busca "Serial no disponible".
 
+PROBLEMA: Un topico publica al DOBLE de frecuencia (ej: IMU a 200 Hz)
+  -> Hay nodos duplicados de un bringup anterior que no murio bien.
+  -> Mira: ros2 node list  (nombres repetidos o con sufijos raros)
+  -> Limpieza: pkill -f base_driver; pkill -f imu_node; \
+     pkill -f ldlidar; pkill -f ekf_node; pkill -f slam_toolbox
+  -> Para evitarlo: cierra el bringup siempre con Ctrl+C en su terminal
+     (no cierres el terminal de golpe ni uses kill al launch).
+
 PROBLEMA: La Pi va lenta durante el SLAM
   -> No corras RViz en la Pi (use_rviz:=false). Usa RViz desde otra PC.
   -> Mira el consumo: top  (slam_toolbox y ldlidar son los pesados).

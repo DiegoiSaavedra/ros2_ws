@@ -13,7 +13,7 @@ lsm303_l3gd20_imu:
     accel_bias_z: 0.0
     gyro_bias_x: 0.0
     gyro_bias_y: 0.0
-    gyro_bias_z: -0.8182
+    gyro_bias_z: -0.7368  # recalibrado 2026-07-06 (robot quieto, 15 s de promedio)
 
     # Calibración de magnetómetro (rellenar con mag_calibrator)
     mag_bias_x: 68.5
