@@ -1,0 +1,228 @@
+================================================================================
+ GUIA DE COMANDOS DEL ROBOT - ROS 2 Jazzy en Raspberry Pi 5
+ Workspace: ~/ros2_ws2/ros2_ws
+ Actualizado: julio 2026
+================================================================================
+
+Este archivo es una guia paso a paso. Los comandos se escriben en un terminal.
+Las lineas que empiezan con # son comentarios, no se escriben.
+
+
+--------------------------------------------------------------------------------
+ 1. EL ENTORNO (que pasa al abrir un terminal)
+--------------------------------------------------------------------------------
+
+Tu ~/.bashrc ya carga todo automaticamente al abrir un terminal:
+  - ROS 2 Jazzy            (source /opt/ros/jazzy/setup.bash)
+  - Tu workspace           (source ~/ros2_ws2/ros2_ws/install/setup.bash)
+
+O sea: abre un terminal y ya puedes usar ros2. Nada mas.
+
+# Si un terminal quedo abierto de antes y no encuentra los paquetes:
+source ~/.bashrc
+
+# Verificar que el entorno esta bien (deben aparecer las rutas del workspace):
+ros2 pkg prefix robot_base
+ros2 pkg prefix lsm303_l3gd20_imu
+
+
+--------------------------------------------------------------------------------
+ 2. ENCENDER EL ROBOT (bringup completo)
+--------------------------------------------------------------------------------
+
+Conecta el Arduino (USB) y el lidar (USB) ANTES de lanzar.
+
+# Verificar que los dispositivos existen:
+ls /dev/ttyACM0     # Arduino (motores + encoders)
+ls /dev/ttyUSB0     # Lidar LD19
+ls /dev/i2c-1       # IMU (siempre esta, va soldada al bus I2C)
+
+# Lanzar TODO (base + IMU + lidar + EKF + SLAM + RViz):
+ros2 launch robot_base principal.launch.py
+
+# Lo mismo pero SIN RViz (recomendado en la Pi, ahorra CPU):
+ros2 launch robot_base bringup_all.launch.py use_rviz:=false \
+    slam_params_file:=/home/diego/ros2_ws2/ros2_ws/config/mapper_params_online_async.yaml \
+    laser_frame:=base_laser
+
+# Para detener todo: Ctrl+C en el terminal donde lanzaste.
+
+
+--------------------------------------------------------------------------------
+ 3. MOVER EL ROBOT (teleoperacion)
+--------------------------------------------------------------------------------
+
+# En OTRO terminal (el bringup sigue corriendo en el primero):
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+#   i = adelante   , = atras   j/l = girar   k = parar
+#   q/z suben/bajan la velocidad. Ojo: parte alta, baja primero con z.
+
+# Mandar una velocidad fija sin teclado (0.1 m/s adelante):
+ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
+    "{linear: {x: 0.1}, angular: {z: 0.0}}"
+# (Ctrl+C para soltar; el watchdog detiene los motores solo a los 0.5 s)
+
+
+--------------------------------------------------------------------------------
+ 4. PRUEBAS: verificar que cada pieza funciona
+--------------------------------------------------------------------------------
+
+# Ver todos los topicos activos:
+ros2 topic list
+
+# --- Odometria de ruedas (la publica base_driver) ---
+ros2 topic hz /odom            # debe marcar ~50 Hz
+ros2 topic echo /odom --once   # posicion x,y y orientacion
+# PRUEBA: al arrancar, x e y deben ser ~0.0 (sin saltos gigantes).
+# Empuja el robot 1 metro a mano: x debe subir ~1.0.
+
+# --- IMU ---
+ros2 topic hz /imu/data_raw    # debe marcar ~100 Hz
+ros2 topic echo /imu/data_raw --once
+# PRUEBA: con el robot quieto, angular_velocity.z debe estar cerca de 0
+# (+-0.02). Si esta lejos de 0, hay que recalibrar gyro_bias_z en
+# src/lsm303_l3gd20_imu/config/imu_params.yaml
+
+# --- Lidar ---
+ros2 topic hz /scan            # debe marcar ~10 Hz
+ros2 topic echo /scan --once | head -20
+
+# --- EKF (fusion odometria + IMU) ---
+ros2 topic hz /odometry/filtered
+ros2 topic echo /odometry/filtered --once
+
+# --- Arbol de transformadas (TF) ---
+# Debe existir la cadena: map -> odom -> base_link -> base_laser / imu_link
+ros2 run tf2_tools view_frames        # genera frames_XXX.pdf en el
+                                      # directorio actual
+ros2 run tf2_ros tf2_echo odom base_link   # muestra la transformada en vivo
+
+# --- Ver nodos corriendo ---
+ros2 node list
+
+
+--------------------------------------------------------------------------------
+ 5. MAPEAR Y GUARDAR EL MAPA (SLAM)
+--------------------------------------------------------------------------------
+
+# Con el bringup corriendo, pasea el robot despacio por la pieza
+# (teleoperacion, seccion 3). El mapa se construye solo.
+
+# Ver el mapa desde otra PC con RViz (misma red, mismo ROS_DOMAIN_ID):
+#   Fixed Frame: map | Add -> Map (topico /map) | Add -> LaserScan (/scan)
+
+# Guardar el mapa cuando este listo:
+mkdir -p ~/ros2_ws2/ros2_ws/maps
+ros2 run nav2_map_server map_saver_cli -f ~/ros2_ws2/ros2_ws/maps/mi_mapa
+# Genera mi_mapa.pgm (imagen) y mi_mapa.yaml (metadatos).
+
+
+--------------------------------------------------------------------------------
+ 6. COMPILAR (solo cuando cambias codigo)
+--------------------------------------------------------------------------------
+
+# IMPORTANTE: el workspace se compilo con --symlink-install, asi que:
+#   - Cambios en .py o .yaml  -> NO hace falta recompilar, solo relanzar.
+#   - Archivos NUEVOS, cambios en setup.py o codigo C++ -> recompilar:
+
+cd ~/ros2_ws2/ros2_ws
+colcon build --symlink-install
+
+# Compilar un solo paquete (mas rapido):
+colcon build --symlink-install --packages-select robot_base
+
+# Si algo raro pasa con la compilacion, limpieza total y de nuevo:
+cd ~/ros2_ws2/ros2_ws
+rm -rf build install log
+colcon build --symlink-install
+source ~/.bashrc
+
+
+--------------------------------------------------------------------------------
+ 7. GIT (guardar tus cambios)
+--------------------------------------------------------------------------------
+
+cd ~/ros2_ws2/ros2_ws
+
+git status                  # que archivos cambiaron
+git diff                    # ver los cambios linea por linea
+git add -A                  # preparar todo para guardar
+git commit -m "mensaje que describe el cambio"
+git log --oneline           # historial de commits
+
+# Subir a GitHub (repo: DiegoiSaavedra/ros2_ws):
+git push origin main
+
+# Volver atras un archivo que rompiste (a como esta en el ultimo commit):
+git checkout -- ruta/del/archivo.py
+
+
+--------------------------------------------------------------------------------
+ 8. PROBLEMAS FRECUENTES
+--------------------------------------------------------------------------------
+
+PROBLEMA: "Package 'robot_base' not found"
+  -> El terminal no cargo el entorno. Ejecuta:  source ~/.bashrc
+
+PROBLEMA: "No se pudo abrir /dev/ttyACM0"
+  -> El Arduino no esta conectado, o cambio de nombre (mira: ls /dev/ttyACM*).
+  -> El puerto se configura en: src/robot_base/config/base.yaml
+  -> El nodo reintenta solo cada 2 segundos, no hace falta relanzar.
+
+PROBLEMA: El lidar no publica /scan
+  -> Mira: ls /dev/ttyUSB*  (el LD19 usa /dev/ttyUSB0 a 230400 baud)
+  -> Tambien existe el symlink /dev/ldlidar (regla udev).
+
+PROBLEMA: La odometria gira sola con el robot quieto
+  -> El bias del gyro cambio (pasa con la temperatura). Recalibrar:
+     1. Robot quieto, mira: ros2 topic echo /imu/data_raw
+     2. Anota el valor promedio de angular_velocity.z (en rad/s)
+     3. Conviertelo a grados/s (multiplica por 57.296) y sumaselo al
+        gyro_bias_z de src/lsm303_l3gd20_imu/config/imu_params.yaml
+     4. Relanza (no hace falta compilar).
+
+PROBLEMA: SLAM dice "Failed to compute odom pose" o no dibuja mapa
+  -> Falta alguna transformada. Revisa el arbol: ros2 run tf2_tools view_frames
+  -> Deben estar: odom->base_link (la publica el EKF) y
+     base_link->base_laser (la publica el static_transform_publisher).
+
+PROBLEMA: El robot no responde a cmd_vel
+  -> 1. Verifica que el driver esta vivo:  ros2 node list  (busca base_driver)
+  -> 2. Verifica que llega el topico:      ros2 topic echo /cmd_vel
+  -> 3. Mira los logs del bringup, busca "Serial no disponible".
+
+PROBLEMA: La Pi va lenta durante el SLAM
+  -> No corras RViz en la Pi (use_rviz:=false). Usa RViz desde otra PC.
+  -> Mira el consumo: top  (slam_toolbox y ldlidar son los pesados).
+
+
+--------------------------------------------------------------------------------
+ 9. REFERENCIA RAPIDA: donde esta cada cosa
+--------------------------------------------------------------------------------
+
+~/ros2_ws2/ros2_ws/                        <- WORKSPACE (el unico oficial)
+  src/robot_base/                          <- driver de la base + launch + configs
+    robot_base/base_driver.py              <- nodo motores/odometria
+    config/base.yaml                       <- puerto serial, radio rueda, etc.
+    config/ekf_odom.yaml                   <- fusion de sensores (EKF)
+    launch/principal.launch.py             <- LANZADOR PRINCIPAL
+    launch/bringup_all.launch.py           <- bringup con argumentos
+  src/lsm303_l3gd20_imu/                   <- driver de la IMU
+    config/imu_params.yaml                 <- calibracion (biases del gyro/mag)
+  src/ldlidar_stl_ros2-3.0.3/              <- driver del lidar LD19
+  config/mapper_params_online_async.yaml   <- parametros de SLAM
+  maps/                                    <- mapas guardados
+
+~/archivo_ws_viejos/                       <- workspaces viejos archivados
+                                              (borrar cuando todo funcione OK)
+
+Topicos principales:
+  /cmd_vel              <- ordenes de velocidad (entra al robot)
+  /odom                 <- odometria de ruedas (50 Hz)
+  /imu/data_raw         <- IMU cruda (100 Hz)
+  /scan                 <- lidar (10 Hz)
+  /odometry/filtered    <- salida del EKF (30 Hz)
+  /map                  <- mapa del SLAM
+
+================================================================================
