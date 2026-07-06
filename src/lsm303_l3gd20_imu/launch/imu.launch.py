@@ -7,7 +7,6 @@ def generate_launch_description():
     pkg = FindPackageShare('lsm303_l3gd20_imu')
 
     imu_params = PathJoinSubstitution([pkg, 'config', 'imu_params.yaml'])
-    madgwick_params = PathJoinSubstitution([pkg, 'config', 'madgwick.yaml'])
 
     imu_node = Node(
         package='lsm303_l3gd20_imu',
@@ -22,19 +21,6 @@ def generate_launch_description():
         # ],
     )
 
-    madgwick = Node(
-        package='imu_filter_madgwick',
-        executable='imu_filter_madgwick_node',
-        name='imu_filter_madgwick',
-        output='screen',
-        parameters=[madgwick_params],
-        remappings=[
-            ('imu/data_raw', '/imu/data_raw'),  # entrada IMU
-            ('imu/mag', '/mag'),                # entrada magnetómetro
-            ('imu/data', '/imu/data'),          # salida fusionada
-        ],
-    )
-
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -46,5 +32,5 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([imu_node, madgwick, static_tf])
+    return LaunchDescription([imu_node, static_tf])
 

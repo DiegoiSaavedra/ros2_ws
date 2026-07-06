@@ -14,6 +14,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
 
   <!-- Dependencias de test que ya estaban en la plantilla -->
   <test_depend>ament_copyright</test_depend>

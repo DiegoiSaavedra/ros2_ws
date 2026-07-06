@@ -59,22 +59,6 @@ def generate_launch_description():
         )
     )
 
-    imu_cov_fix = Node(
-    package='robot_base',
-    executable='imu_cov_fix',
-    name='imu_cov_fix',
-    output='screen',
-    # Añadimos los remappings para asegurar que los tópicos son correctos
-    remappings=[('imu/data', '/imu/data'), ('imu/data_fixed', '/imu/data_fixed')],
-    # Y aquí añadimos los parámetros para poder ajustarlos
-    parameters=[{
-        # Un valor más PEQUEÑO aquí significa MÁS CONFIANZA en la IMU.
-        # Prueba con 0.002. Si quieres más confianza, prueba 0.001 o 0.0005.
-        'cov_orientation': [0.002, 0.0, 0.0, 0.0, 0.002, 0.0, 0.0, 0.0, 0.002],
-        'cov_velocity':    [0.002, 0.0, 0.0, 0.0, 0.002, 0.0, 0.0, 0.0, 0.002],
-        'cov_acceleration':[0.05,  0.0, 0.0, 0.0, 0.05,  0.0, 0.0, 0.0, 0.05],
-    }]
-)
     ekf = Node(
         package='robot_localization',
         executable='ekf_node',
@@ -123,7 +107,6 @@ def generate_launch_description():
         declare_args + [
             base_driver,
             imu_launch,
-            imu_cov_fix,
             lidar_launch,
             static_laser_tf,
             ekf_delayed,
