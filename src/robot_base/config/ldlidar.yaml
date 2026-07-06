@@ -12,7 +12,7 @@
       model: "LDLiDAR_LD19"           # <- ¡IMPORTANTE!
       rot_verse: "CCW"                # CCW suele ser lo correcto
       units: "M"
-      frame_id: "base_laser"
+      frame_id: "laser_frame"
       bins: 455                         # 0 = tamaño dinámico
       range_min: 0.03
       range_max: 15.0
