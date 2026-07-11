@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, MagneticField
 from std_msgs.msg import Header
@@ -242,12 +243,16 @@ class IMUNode(Node):
 
 def main():
     rclpy.init()
-    node = IMUNode()
+    node = None
     try:
+        node = IMUNode()
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        return
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if node is not None:
+            node.destroy_node()
+        rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()

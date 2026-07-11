@@ -102,6 +102,8 @@ class BaseDriver(Node):
         # aceptar movimiento hasta abrir el enlace, enviar STOP y recibir una
         # línea válida de telemetría posterior a la conexión.
         self._state_lock = threading.Lock()
+        self._log_lock = threading.Lock()
+        self._last_log_times = {}
         self.desired_linear_x = 0.0
         self.desired_angular_z = 0.0
         self.pwm_left = 0
@@ -123,23 +125,58 @@ class BaseDriver(Node):
     def _safe_log(self, level: str, message: str,
                   throttle_duration_sec: float = None) -> None:
         """Registra sin permitir que un fallo del logger oculte la parada."""
+        if throttle_duration_sec is not None:
+            now = time.monotonic()
+            key = (level, message[:120])
+            with self._log_lock:
+                last = self._last_log_times.get(key)
+                if last is not None and now - last < throttle_duration_sec:
+                    return
+                self._last_log_times[key] = now
+
         try:
-            log_method = getattr(self.get_logger(), level)
-            if throttle_duration_sec is None:
-                log_method(message)
+            context_is_valid = rclpy.ok(context=self.context)
+        except Exception:
+            context_is_valid = False
+
+        if not context_is_valid:
+            self._stderr_log(level, message)
+            return
+
+        try:
+            logger = self.get_logger()
+            if level == 'error':
+                logger.error(message)
+            elif level == 'warning':
+                logger.warning(message)
+            elif level == 'info':
+                logger.info(message)
             else:
-                log_method(message, throttle_duration_sec=throttle_duration_sec)
+                logger.debug(message)
         except Exception as log_error:
-            try:
-                sys.stderr.write(
-                    f"base_driver: fallo de log ({type(log_error).__name__}: "
-                    f"{log_error}); mensaje original: {message}\n")
-            except Exception:
-                return
+            self._stderr_log(
+                'error',
+                f"fallo de log ({type(log_error).__name__}: {log_error}); "
+                f"mensaje original: {message}",
+            )
+
+    @staticmethod
+    def _stderr_log(level: str, message: str) -> None:
+        try:
+            sys.stderr.write(f"base_driver [{level}]: {message}\n")
+            sys.stderr.flush()
+        except Exception:
+            return
 
     @staticmethod
     def _exception_detail(place: str, error: Exception) -> str:
         return f"{place}: {type(error).__name__}: {error}"
+
+    def _ros_context_is_valid(self) -> bool:
+        try:
+            return rclpy.ok(context=self.context)
+        except Exception:
+            return False
 
     def _set_stopped_state(self, accept_motion=None) -> None:
         with self._state_lock:
@@ -458,6 +495,12 @@ class BaseDriver(Node):
 
     # ---------- Odometría ----------
     def _process_ticks(self, ticks_left: int, ticks_right: int):
+        # El manejador de señales de rclpy puede invalidar el contexto antes
+        # de que spin() retorne. El hilo serie no debe publicar durante esa
+        # breve ventana de cierre.
+        if self._shutdown_started or not self._ros_context_is_valid():
+            return
+
         now = self.get_clock().now()
 
         if not self.ticks_initialized:
@@ -539,6 +582,8 @@ class BaseDriver(Node):
             0,    0,     0,    0,    0,    0.1,
         ]
 
+        if self._shutdown_started or not self._ros_context_is_valid():
+            return
         self.odom_pub.publish(odom_msg)
 
     # ---------- Apagado ----------
@@ -570,14 +615,13 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         if node is not None:
-            node.emergency_stop('KeyboardInterrupt', repeat=3)
+            node.shutdown('KeyboardInterrupt')
     except ExternalShutdownException:
         if node is not None:
-            node.emergency_stop('SIGINT/SIGTERM o cierre externo', repeat=3)
+            node.shutdown('SIGINT/SIGTERM o cierre externo')
     except Exception as error:
         if node is not None:
-            node.emergency_stop(
-                node._exception_detail('main', error), level='error', repeat=3)
+            node.shutdown(node._exception_detail('main', error))
         raise
     finally:
         if node is not None:

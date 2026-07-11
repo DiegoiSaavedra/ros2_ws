@@ -29,6 +29,8 @@ SerialInterfaceLinux::SerialInterfaceLinux()
     : rx_thread_(nullptr), rx_count_(0), read_callback_(nullptr) {
   com_handle_ = -1;
   com_baudrate_ = 0;
+  is_cmd_opened_ = false;
+  rx_thread_exit_flag_ = true;
 }
 
 SerialInterfaceLinux::~SerialInterfaceLinux() { Close(); }
@@ -39,6 +41,12 @@ bool SerialInterfaceLinux::Open(std::string &port_name, uint32_t com_baudrate) {
   com_handle_ = open(port_name.c_str(), flags);
   if (-1 == com_handle_) {
     LD_LOG_ERROR("Open open error,%s", strerror(errno));
+    return false;
+  }
+  if (com_handle_ >= FD_SETSIZE) {
+    LD_LOG_ERROR("Serial descriptor exceeds FD_SETSIZE: %d", com_handle_);
+    close(com_handle_);
+    com_handle_ = -1;
     return false;
   }
 
@@ -91,32 +99,29 @@ bool SerialInterfaceLinux::Open(std::string &port_name, uint32_t com_baudrate) {
 
   tcflush(com_handle_, TCIFLUSH);
 
+  is_cmd_opened_ = true;
   rx_thread_exit_flag_ = false;
   rx_thread_ = new std::thread(RxThreadProc, this);
-  is_cmd_opened_ = true;
 
   return true;
 }
 
 bool SerialInterfaceLinux::Close() {
-  if (is_cmd_opened_ == false) {
-    return true;
-  }
-
   rx_thread_exit_flag_ = true;
+  is_cmd_opened_ = false;
 
-  if (com_handle_ != -1) {
-    close(com_handle_);
-    com_handle_ = -1;
-  }
-
+  // El hilo puede estar dentro de pselect()/read(). El descriptor debe seguir
+  // siendo válido hasta que el hilo termine; pselect vence en 100 ms.
   if ((rx_thread_ != nullptr) && rx_thread_->joinable()) {
     rx_thread_->join();
     delete rx_thread_;
     rx_thread_ = nullptr;
   }
 
-  is_cmd_opened_ = false;
+  if (com_handle_ != -1) {
+    close(com_handle_);
+    com_handle_ = -1;
+  }
 
   return true;
 }
@@ -127,21 +132,26 @@ bool SerialInterfaceLinux::ReadFromIO(uint8_t *rx_buf, uint32_t rx_buf_len,
   int32_t len = -1;
 
   if (IsOpened()) {
+    const int32_t fd = com_handle_;
+    if (fd < 0 || fd >= FD_SETSIZE) {
+      LD_LOG_ERROR("Invalid serial descriptor for pselect: %d", fd);
+      return false;
+    }
     fd_set read_fds;
     FD_ZERO(&read_fds);
-    FD_SET(com_handle_, &read_fds);
-    int r = pselect(com_handle_ + 1, &read_fds, NULL, NULL, &timeout, NULL);
+    FD_SET(fd, &read_fds);
+    int r = pselect(fd + 1, &read_fds, NULL, NULL, &timeout, NULL);
     if (r < 0) {
-      // Select was interrupted
-      if (errno == EINTR) {
-        return false;
+      if (errno != EINTR) {
+        LD_LOG_ERROR("Serial pselect error: %s", strerror(errno));
       }
+      return false;
     } else if (r == 0) {  // timeout
       return false;
     }
 
-    if (FD_ISSET(com_handle_, &read_fds)) {
-      len = (int32_t)read(com_handle_, rx_buf, rx_buf_len);
+    if (FD_ISSET(fd, &read_fds)) {
+      len = (int32_t)read(fd, rx_buf, rx_buf_len);
       if ((len != -1) && rx_len) {
         *rx_len = len;
       }
