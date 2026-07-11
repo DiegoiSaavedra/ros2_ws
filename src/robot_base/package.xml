@@ -32,5 +32,5 @@
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
 </package>
-
