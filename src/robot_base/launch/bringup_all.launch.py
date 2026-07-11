@@ -15,6 +15,8 @@ def generate_launch_description():
     slam_params_file = LaunchConfiguration('slam_params_file')
     use_rviz         = LaunchConfiguration('use_rviz')
     publish_laser_tf = LaunchConfiguration('publish_laser_tf')
+    scan_min_range    = LaunchConfiguration('scan_min_range')
+    enable_near_debug = LaunchConfiguration('enable_near_debug')
 
     base_link_frame  = LaunchConfiguration('base_link_frame')
     laser_frame      = LaunchConfiguration('laser_frame')
@@ -35,6 +37,8 @@ def generate_launch_description():
         # RViz consume mucha CPU en la Pi: actívalo con use_rviz:=true
         DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('publish_laser_tf', default_value='true'),
+        DeclareLaunchArgument('scan_min_range', default_value='0.02'),
+        DeclareLaunchArgument('enable_near_debug', default_value='false'),
         DeclareLaunchArgument('base_link_frame', default_value='base_link'),
         # Debe coincidir con el frame_id que publica el driver del lidar
         DeclareLaunchArgument('laser_frame', default_value='base_laser'),
@@ -74,7 +78,11 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory('ldlidar_stl_ros2'), 'launch', 'ld19.launch.py')
         ),
-        launch_arguments={'publish_tf': 'false'}.items()
+        launch_arguments={
+            'publish_tf': 'false',
+            'scan_min_range': scan_min_range,
+            'enable_near_debug': enable_near_debug,
+        }.items()
     )
 
     static_laser_tf = Node(

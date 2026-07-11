@@ -32,6 +32,9 @@ struct LaserScanSetting
   bool enable_angle_crop_func;
   double angle_crop_min;
   double angle_crop_max;
+  double scan_min_range;
+  bool enable_near_debug;
+  std::string near_debug_topic;
 };
 
 #endif //__ROS_API_H__

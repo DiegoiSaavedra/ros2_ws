@@ -218,7 +218,9 @@ bool LiPkg::AssemblePacket() {
         if (first_frame_) {
           first_frame_ = false;
         } else {
-          SetLaserScanData(tmp);
+          // Conservar la misma vuelta antes y despues del filtro permite una
+          // salida diagnostica sin abrir otra instancia del puerto serie.
+          SetLaserScanData(tmp, data);
           SetFrameReady();
         }
 
@@ -291,9 +293,24 @@ bool LiPkg::GetLaserScanData(Points2D& out) {
   }
 }
 
-void LiPkg::SetLaserScanData(Points2D& src) {
+bool LiPkg::GetLaserScanData(Points2D& out, Points2D& raw_out) {
+  if (IsFrameReady()) {
+    ResetFrameReady();
+    {
+      std::lock_guard<std::mutex> lg(mutex_lock2_);
+      out = laser_scan_data_;
+      raw_out = laser_scan_data_raw_;
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void LiPkg::SetLaserScanData(Points2D& src, Points2D& raw_src) {
   std::lock_guard<std::mutex> lg(mutex_lock2_);
   laser_scan_data_ = src;
+  laser_scan_data_raw_ = raw_src;
 }
 
 void LiPkg::RegisterTimestampGetFunctional(std::function<uint64_t(void)> timestamp_handle) {

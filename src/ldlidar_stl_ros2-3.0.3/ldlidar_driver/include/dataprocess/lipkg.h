@@ -75,6 +75,7 @@ class LiPkg {
   void CommReadCallback(const char *byte, size_t len);
 
   bool GetLaserScanData(Points2D& out);
+  bool GetLaserScanData(Points2D& out, Points2D& raw_out);
 
   void RegisterTimestampGetFunctional(std::function<uint64_t(void)> timestamp_handle);
 
@@ -109,6 +110,7 @@ class LiPkg {
   LiDARFrameTypeDef pkg_;
   Points2D frame_tmp_;
   Points2D laser_scan_data_;
+  Points2D laser_scan_data_raw_;
   std::mutex  mutex_lock1_;
   std::mutex  mutex_lock2_;
   
@@ -119,7 +121,7 @@ class LiPkg {
   // combine stantard data into data frames and calibrate
   bool AssemblePacket();  
   void SetFrameReady(void);
-  void SetLaserScanData(Points2D& src);
+  void SetLaserScanData(Points2D& src, Points2D& raw_src);
 
   // Get lidar data frame ready flag  
   bool IsFrameReady(void);  

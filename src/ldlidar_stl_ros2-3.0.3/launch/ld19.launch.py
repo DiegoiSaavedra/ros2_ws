@@ -13,10 +13,13 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     publish_tf = LaunchConfiguration("publish_tf")
+    scan_min_range = LaunchConfiguration("scan_min_range")
+    enable_near_debug = LaunchConfiguration("enable_near_debug")
 
     # LDROBOT LiDAR publisher node
     ldlidar_node = Node(
@@ -36,6 +39,9 @@ def generate_launch_description():
             {"enable_angle_crop_func": False},
             {"angle_crop_min": 135.0},
             {"angle_crop_max": 225.0},
+            {"scan_min_range": ParameterValue(scan_min_range, value_type=float)},
+            {"enable_near_debug": ParameterValue(enable_near_debug, value_type=bool)},
+            {"near_debug_topic": "scan_near_debug"},
         ],
     )
 
@@ -51,8 +57,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("publish_tf", default_value="false"),
+            DeclareLaunchArgument("scan_min_range", default_value="0.02"),
+            DeclareLaunchArgument("enable_near_debug", default_value="false"),
             ldlidar_node,
             base_link_to_laser_tf_node,
         ]
     )
-

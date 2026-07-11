@@ -22,8 +22,20 @@
 #include "ros2_api.h"
 #include "ldlidar_driver.h"
 
+namespace {
+constexpr float kDefaultScanMinRange = 0.02F;
+constexpr float kDiagnosticEncodingMinRange = 0.001F;
+constexpr float kScanMaxRange = 12.0F;
+
+bool IsValidScanMinRange(double value) {
+  return std::isfinite(value) && value > 0.0 && value < kScanMaxRange;
+}
+}  // namespace
+
 void  ToLaserscanMessagePublish(ldlidar::Points2D& src, double lidar_spin_freq, LaserScanSetting& setting,
-  rclcpp::Node::SharedPtr& node, rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& lidarpub);
+  rclcpp::Node::SharedPtr& node, rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& lidarpub,
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& near_debug_pub,
+  ldlidar::Points2D& near_debug_src);
 
 uint64_t GetSystemTimeStamp(void);
 
@@ -33,7 +45,7 @@ int main(int argc, char **argv) {
   std::string product_name;
 	std::string topic_name;
 	std::string port_name;
-  int serial_port_baudrate;
+  int serial_port_baudrate = 230400;
   ldlidar::LDType type_name;
   LaserScanSetting setting;
 	setting.frame_id = "base_laser";
@@ -41,6 +53,9 @@ int main(int argc, char **argv) {
   setting.enable_angle_crop_func = false;
   setting.angle_crop_min = 0.0;
   setting.angle_crop_max = 0.0;
+  setting.scan_min_range = kDefaultScanMinRange;
+  setting.enable_near_debug = false;
+  setting.near_debug_topic = "scan_near_debug";
   
   // declare ros2 param
   node->declare_parameter<std::string>("product_name", product_name);
@@ -52,6 +67,9 @@ int main(int argc, char **argv) {
   node->declare_parameter<bool>("enable_angle_crop_func", setting.enable_angle_crop_func);
   node->declare_parameter<double>("angle_crop_min", setting.angle_crop_min);
   node->declare_parameter<double>("angle_crop_max", setting.angle_crop_max);
+  node->declare_parameter<double>("scan_min_range", setting.scan_min_range);
+  node->declare_parameter<bool>("enable_near_debug", setting.enable_near_debug);
+  node->declare_parameter<std::string>("near_debug_topic", setting.near_debug_topic);
 
   // get ros2 param
   node->get_parameter("product_name", product_name);
@@ -63,6 +81,22 @@ int main(int argc, char **argv) {
   node->get_parameter("enable_angle_crop_func", setting.enable_angle_crop_func);
   node->get_parameter("angle_crop_min", setting.angle_crop_min);
   node->get_parameter("angle_crop_max", setting.angle_crop_max);
+  node->get_parameter("scan_min_range", setting.scan_min_range);
+  node->get_parameter("enable_near_debug", setting.enable_near_debug);
+  node->get_parameter("near_debug_topic", setting.near_debug_topic);
+
+  if (!IsValidScanMinRange(setting.scan_min_range)) {
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "Invalid scan_min_range %.6f; using safe default %.3f m",
+      setting.scan_min_range, kDefaultScanMinRange);
+    setting.scan_min_range = kDefaultScanMinRange;
+  }
+  if (setting.near_debug_topic.empty()) {
+    RCLCPP_ERROR(node->get_logger(),
+      "near_debug_topic is empty; disabling near-range diagnostic output");
+    setting.enable_near_debug = false;
+  }
 
   ldlidar::LDLidarDriver* ldlidarnode = new ldlidar::LDLidarDriver();
 
@@ -76,6 +110,9 @@ int main(int argc, char **argv) {
   RCLCPP_INFO(node->get_logger(), "<enable_angle_crop_func>: %s", (setting.enable_angle_crop_func?"true":"false"));
   RCLCPP_INFO(node->get_logger(), "<angle_crop_min>: %f", setting.angle_crop_min);
   RCLCPP_INFO(node->get_logger(), "<angle_crop_max>: %f", setting.angle_crop_max);
+  RCLCPP_INFO(node->get_logger(), "<scan_min_range>: %.3f m", setting.scan_min_range);
+  RCLCPP_INFO(node->get_logger(), "<enable_near_debug>: %s",
+    setting.enable_near_debug ? "true" : "false");
 
   if (product_name == "LDLiDAR_LD06") {
     type_name = ldlidar::LDType::LD_06;
@@ -107,17 +144,35 @@ int main(int argc, char **argv) {
   // create ldlidar data topic and publisher
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr publisher = 
       node->create_publisher<sensor_msgs::msg::LaserScan>(topic_name, 10);
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr near_debug_publisher;
+  if (setting.enable_near_debug) {
+    near_debug_publisher = node->create_publisher<sensor_msgs::msg::LaserScan>(
+      setting.near_debug_topic, 10);
+    RCLCPP_WARN(node->get_logger(),
+      "Near-range diagnostic enabled on <%s>; production <%s> remains filtered at %.3f m",
+      setting.near_debug_topic.c_str(), topic_name.c_str(), setting.scan_min_range);
+  }
   
   rclcpp::WallRate r(10); //10hz
 
   ldlidar::Points2D laser_scan_points;
+  ldlidar::Points2D raw_laser_scan_points;
   double lidar_scan_freq;
   RCLCPP_INFO(node->get_logger(), "Publish topic message:ldlidar scan data.");
   while (rclcpp::ok()) {
-    switch (ldlidarnode->GetLaserScanData(laser_scan_points, 1500)){
+    ldlidar::LidarStatus scan_status;
+    if (setting.enable_near_debug) {
+      scan_status = ldlidarnode->GetLaserScanData(
+        laser_scan_points, raw_laser_scan_points, 1500);
+    } else {
+      scan_status = ldlidarnode->GetLaserScanData(laser_scan_points, 1500);
+    }
+    switch (scan_status) {
       case ldlidar::LidarStatus::NORMAL: 
         ldlidarnode->GetLidarScanFreq(lidar_scan_freq);
-        ToLaserscanMessagePublish(laser_scan_points, lidar_scan_freq, setting, node, publisher);
+        ToLaserscanMessagePublish(
+          laser_scan_points, lidar_scan_freq, setting, node, publisher,
+          near_debug_publisher, raw_laser_scan_points);
         break;
       case ldlidar::LidarStatus::DATA_TIME_OUT:
         RCLCPP_ERROR(node->get_logger(), "get ldlidar data is time out, please check your lidar device.");
@@ -143,7 +198,9 @@ int main(int argc, char **argv) {
 }
 
 void  ToLaserscanMessagePublish(ldlidar::Points2D& src,  double lidar_spin_freq, LaserScanSetting& setting,
-  rclcpp::Node::SharedPtr& node, rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& lidarpub) {
+  rclcpp::Node::SharedPtr& node, rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& lidarpub,
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr& near_debug_pub,
+  ldlidar::Points2D& near_debug_src) {
   float angle_min, angle_max, range_min, range_max, angle_increment;
   double scan_time;
   rclcpp::Time start_scan_time;
@@ -161,9 +218,15 @@ void  ToLaserscanMessagePublish(ldlidar::Points2D& src,  double lidar_spin_freq,
   // Adjust the parameters according to the demand
   angle_min = 0;
   angle_max = (2 * M_PI);
-  range_min = 0.02;
-  range_max = 12;
+  // El valor de produccion coincide con el minimo nominal del LD19. El topico
+  // diagnostico separado conserva la vuelta anterior al filtro del SDK.
+  range_min = static_cast<float>(setting.scan_min_range);
+  range_max = kScanMaxRange;
   int beam_size = static_cast<int>(src.size());
+  if (beam_size <= 1) {
+    RCLCPP_WARN(node->get_logger(), "Discarding scan with %d beam(s)", beam_size);
+    return;
+  }
   angle_increment = (angle_max - angle_min) / (float)(beam_size -1);
   // Calculate the number of scanning points
   if (lidar_spin_freq > 0) {
@@ -175,29 +238,47 @@ void  ToLaserscanMessagePublish(ldlidar::Points2D& src,  double lidar_spin_freq,
     output.range_min = range_min;
     output.range_max = range_max;
     output.angle_increment = angle_increment;
-    if (beam_size <= 1) {
-      output.time_increment = 0;
-    } else {
-      output.time_increment = static_cast<float>(scan_time / (double)(beam_size - 1));
-    }
+    output.time_increment = static_cast<float>(scan_time / (double)(beam_size - 1));
     output.scan_time = scan_time;
     // First fill all the data with Nan
     output.ranges.assign(beam_size, std::numeric_limits<float>::quiet_NaN());
     output.intensities.assign(beam_size, std::numeric_limits<float>::quiet_NaN());
+    sensor_msgs::msg::LaserScan near_debug_output = output;
+    near_debug_output.range_min = kDiagnosticEncodingMinRange;
+
+    auto store_point = [](sensor_msgs::msg::LaserScan& scan, int index,
+                          float range, float intensity) {
+      if (std::isnan(scan.ranges[index]) ||
+          (!std::isnan(range) && range < scan.ranges[index])) {
+        scan.ranges[index] = range;
+        scan.intensities[index] = intensity;
+      }
+    };
+
     for (auto point : src) {
       float range = point.distance / 1000.f;  // distance unit transform to meters
       float intensity = point.intensity;      // laser receive intensity 
       float dir_angle = point.angle;
 
-      if ((point.distance == 0) && (point.intensity == 0)) { // filter is handled to  0, Nan will be assigned variable.
-        range = std::numeric_limits<float>::quiet_NaN(); 
+      // El SDK representa los puntos descartados con distancia cero.
+      if (point.distance == 0) {
+        range = std::numeric_limits<float>::quiet_NaN();
         intensity = std::numeric_limits<float>::quiet_NaN();
+      }
+
+      float production_range = range;
+      float production_intensity = intensity;
+      if (!std::isnan(production_range) && production_range < range_min) {
+        production_range = std::numeric_limits<float>::quiet_NaN();
+        production_intensity = std::numeric_limits<float>::quiet_NaN();
       }
 
       if (setting.enable_angle_crop_func) { // Angle crop setting, Mask data within the set angle range
         if ((dir_angle >= setting.angle_crop_min) && (dir_angle <= setting.angle_crop_max)) {
           range = std::numeric_limits<float>::quiet_NaN();
           intensity = std::numeric_limits<float>::quiet_NaN();
+          production_range = std::numeric_limits<float>::quiet_NaN();
+          production_intensity = std::numeric_limits<float>::quiet_NaN();
         }
       }
 
@@ -211,31 +292,45 @@ void  ToLaserscanMessagePublish(ldlidar::Points2D& src,  double lidar_spin_freq,
 
         if (setting.laser_scan_dir) {
           int index_anticlockwise = beam_size - index - 1;
-          // If the current content is Nan, it is assigned directly
-          if (std::isnan(output.ranges[index_anticlockwise])) {
-            output.ranges[index_anticlockwise] = range;
-          } else { // Otherwise, only when the distance is less than the current
-                    //   value, it can be re assigned
-            if (range < output.ranges[index_anticlockwise]) {
-                output.ranges[index_anticlockwise] = range;
-            }
-          }
-          output.intensities[index_anticlockwise] = intensity;
+          store_point(output, index_anticlockwise,
+            production_range, production_intensity);
         } else {
-          // If the current content is Nan, it is assigned directly
-          if (std::isnan(output.ranges[index])) {
-            output.ranges[index] = range;
-          } else { // Otherwise, only when the distance is less than the current
-                  //   value, it can be re assigned
-            if (range < output.ranges[index]) {
-              output.ranges[index] = range;
-            }
-          }
-          output.intensities[index] = intensity;
+          store_point(output, index, production_range, production_intensity);
+        }
+      }
+    }
+
+    // La salida diagnostica se forma con la copia de la misma vuelta anterior
+    // al NearFilter del SDK. No modifica ni reemplaza la rama de produccion.
+    if (near_debug_pub) {
+      for (auto point : near_debug_src) {
+        float range = point.distance / 1000.f;
+        float intensity = point.intensity;
+        float dir_angle = point.angle;
+
+        if (point.distance == 0) {
+          range = std::numeric_limits<float>::quiet_NaN();
+          intensity = std::numeric_limits<float>::quiet_NaN();
+        }
+        if (setting.enable_angle_crop_func &&
+            dir_angle >= setting.angle_crop_min &&
+            dir_angle <= setting.angle_crop_max) {
+          range = std::numeric_limits<float>::quiet_NaN();
+          intensity = std::numeric_limits<float>::quiet_NaN();
+        }
+
+        float angle = ANGLE_TO_RADIAN(dir_angle);
+        int index = static_cast<int>(ceil((angle - angle_min) / angle_increment));
+        if (index >= 0 && index < beam_size) {
+          int output_index = setting.laser_scan_dir ? beam_size - index - 1 : index;
+          store_point(near_debug_output, output_index, range, intensity);
         }
       }
     }
     lidarpub->publish(output);
+    if (near_debug_pub) {
+      near_debug_pub->publish(near_debug_output);
+    }
     end_scan_time = start_scan_time;
   } 
 }
