@@ -206,9 +206,10 @@ collision_monitor:
     SlowdownZone:
       type: polygon
       points: "[[0.50, 0.33], [0.50, -0.33], [-0.30, -0.33], [-0.30, 0.33]]"
-      action_type: slowdown
+      action_type: limit
       min_points: 1
-      slowdown_ratio: 0.5
+      linear_limit: 0.08
+      angular_limit: 0.8
       visualize: true
       polygon_pub_topic: collision_monitor/slowdown_zone
       enabled: true
