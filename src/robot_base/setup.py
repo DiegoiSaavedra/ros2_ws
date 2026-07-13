@@ -14,6 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch',  glob(os.path.join('launch', '*.launch.py'))),
         ('share/' + package_name + '/config',  glob(os.path.join('config', '*.yaml'))),
+        ('share/' + package_name + '/behavior_trees',
+         glob(os.path.join('behavior_trees', '*.xml'))),
         ('share/' + package_name + '/rviz',    glob(os.path.join('rviz',   '*.rviz'))),
     ],
     install_requires=['setuptools'],
