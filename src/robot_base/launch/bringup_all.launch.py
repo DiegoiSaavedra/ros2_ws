@@ -99,7 +99,10 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory('slam_toolbox'), 'launch', 'online_async_launch.py')
         ),
-        launch_arguments={'slam_params_file': slam_params_file}.items()
+        launch_arguments={
+            'slam_params_file': slam_params_file,
+            'use_sim_time': 'false',
+        }.items()
     )
 
     rviz = Node(
