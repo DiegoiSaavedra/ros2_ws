@@ -8,3 +8,50 @@ base_driver:
     cmd_vel_timeout: 0.25
     serial_rx_timeout: 0.25
     verbose_serial: false
+
+    # Calibracion medida el 28-jul-2026 A BATERIA (ver la curva completa en
+    # safety.py). PWM = deadband + (255 - deadband) * (|v| - min) / (max - min)
+    #
+    # IMPORTANTE: el robot debe estar desenchufado de la fuente de pared. Con
+    # el cable puesto la velocidad cae de 0.147 a 0.033 m/s porque el cable lo
+    # retiene, y cualquier medicion hecha asi es basura.
+    #
+    # deadband 100 en avance = el punto donde arrancan LAS DOS ruedas; por
+    # debajo solo responde la derecha y el robot se va de lado.
+    pwm_deadband_drive: 100.0
+    pwm_deadband_pivot: 80.0
+    min_wheel_speed: 0.040
+    max_wheel_speed: 0.147
+    # Capas experimentales DESACTIVADAS (28-jul-2026). Se vuelve al mapeo
+    # validado PWM = sign(v)*(55 + 950*|v|), sin trim ni lazo cerrado.
+    #
+    # Motivo del apagado de BREAKAWAY: exigia 3 muestras consecutivas
+    # >0.03 m/s dentro de 0.25 s, pero solo puede contar una muestra por
+    # Twist recibido y Nav2 publica a 10 Hz (controller_frequency). En la
+    # ventana entran como maximo 2 conteos (t=0.1 y t=0.2; el ciclo t=0
+    # solo inicializa), asi que el criterio es inalcanzable y cada arranque
+    # terminaba en BREAKAWAY_FAILURE -> parada de seguridad. Haria falta
+    # cmd_vel a >=16 Hz. Esto no dice nada sobre el estado de los motores.
+    #
+    # Motivo del apagado de PI y trim: se calibraron con la rueda izquierda
+    # floja, ya ajustada. Cualquier asimetria real se vuelve a medir antes
+    # de reintroducir correccion.
+    wheel_speed_pi_enabled: false
+    wheel_speed_pi_kp: 800.0
+    wheel_speed_pi_ki: 250.0
+    wheel_speed_pi_correction_limit: 35.0
+    wheel_speed_pi_integral_limit: 0.10
+    wheel_speed_target_scale: 0.62
+    # Trim medido el 28-jul-2026 a bateria: en 1 m de recta el robot se fue
+    # 30 cm a la derecha (arco de radio 1.63 m, 0.62 rad). La rueda izquierda
+    # recorrio 1.051 m y la derecha 0.961 m, o sea que la derecha avanza el
+    # 91.5% de la izquierda. Se frena la izquierda para igualarlas.
+    # Se aplica sobre la velocidad de rueda, no sobre el PWM.
+    left_feedforward_scale: 0.915
+    right_feedforward_scale: 1.00
+    wheel_speed_feedback_timeout: 0.15
+    wheel_breakaway_enabled: false
+    wheel_breakaway_pwm: 226
+    wheel_breakaway_speed: 0.03
+    wheel_breakaway_samples: 3
+    wheel_breakaway_timeout: 0.25

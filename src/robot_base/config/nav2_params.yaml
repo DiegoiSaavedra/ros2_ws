@@ -40,8 +40,9 @@ controller_server:
     # rendirse; con esto corta a los 4 s (a 0.12 m/s normalmente recorre
     # 0.15 m en ~1.5 s, sobra margen)
     progress_checker:
-      plugin: "nav2_controller::SimpleProgressChecker"
+      plugin: "nav2_controller::PoseProgressChecker"
       required_movement_radius: 0.15
+      required_movement_angle: 0.25
       movement_time_allowance: 4.0
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -62,12 +63,14 @@ controller_server:
       use_cost_regulated_linear_velocity_scaling: true
       # Debe coincidir exactamente con ambas inflation_layer.
       inflation_cost_scaling_factor: 3.0
+      cost_scaling_dist: 0.35
       regulated_linear_scaling_min_speed: 0.08
       # chequeo de colision sobre la trayectoria proyectada
       use_collision_detection: true
-      max_allowed_time_to_collision_up_to_carrot: 2.0
+      max_allowed_time_to_collision_up_to_carrot: 1.0
       transform_tolerance: 0.2
       rotate_to_heading_angular_vel: 0.8
+      rotate_to_heading_min_angle: 0.35
       max_angular_accel: 1.5
 
 planner_server:
@@ -194,16 +197,35 @@ collision_monitor:
     stop_pub_timeout: 1.0
 
     # Footprint preservado: x=[-0.15, 0.12], y=[-0.12, 0.12].
-    # StopZone añade 18 cm delante, 5 cm detrás y 10 cm por lateral.
+    # StopZone: añade 10 cm delante y 5 cm detrás; lateralmente queda al ras
+    # del footprint padded (0.26 m de ancho). El lateral se redujo de ±0.17 a
+    # ±0.13 el 28-jul-2026: con ±0.17 la zona medía 0.34 m y el paso estrecho
+    # entre el tacho y la batería mide 0.40 m, o sea 3 cm de margen por lado
+    # contra un error transversal medido de 5.8 cm. La zona se activaba en la
+    # entrada y Nav2 abortaba con "Failed to make progress" sin que el robot
+    # llegara a moverse. La protección frontal (0.22 m) queda igual, y la
+    # ApproachZone sigue proyectando el footprint según la velocidad real.
+    # ApproachZone proyecta el footprint publicado para intervenir solamente
+    # cuando la velocidad actual conduce hacia una colisión.
     # SlowdownZone añade 38 cm delante, 15 cm detrás y 21 cm por lateral.
-    polygons: ["StopZone", "SlowdownZone"]
+    polygons: ["StopZone", "ApproachZone", "SlowdownZone"]
     StopZone:
       type: polygon
-      points: "[[0.30, 0.22], [0.30, -0.22], [-0.20, -0.22], [-0.20, 0.22]]"
+      points: "[[0.22, 0.13], [0.22, -0.13], [-0.20, -0.13], [-0.20, 0.13]]"
       action_type: stop
       min_points: 1
       visualize: true
       polygon_pub_topic: collision_monitor/stop_zone
+      enabled: true
+    ApproachZone:
+      type: polygon
+      action_type: approach
+      footprint_topic: /local_costmap/published_footprint
+      time_before_collision: 1.0
+      simulation_time_step: 0.05
+      min_points: 1
+      visualize: true
+      polygon_pub_topic: collision_monitor/approach_zone
       enabled: true
     SlowdownZone:
       type: polygon

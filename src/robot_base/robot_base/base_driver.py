@@ -14,20 +14,27 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Float64MultiArray
 from tf_transformations import quaternion_from_euler
 
 from robot_base.safety import (
     DEFAULT_CMD_VEL_TIMEOUT,
+    DEFAULT_DRIVE_DEADBAND,
+    DEFAULT_MAX_WHEEL_SPEED,
+    DEFAULT_MIN_WHEEL_SPEED,
+    DEFAULT_PIVOT_DEADBAND,
     DEFAULT_SERIAL_RX_TIMEOUT,
+    MAX_PWM,
+    VELOCITY_EPSILON,
+    WheelSpeedPI,
+    check_deadband,
     command_timed_out,
     parse_encoder_line,
     positive_timeout,
     require_finite,
     twist_to_wheel_velocities,
     velocity_to_pwm,
-    wheel_speed_limit,
 )
-
 
 class BaseDriver(Node):
     """Driver de la base diferencial.
@@ -50,6 +57,25 @@ class BaseDriver(Node):
         self.declare_parameter('cmd_vel_timeout', DEFAULT_CMD_VEL_TIMEOUT)
         self.declare_parameter('serial_rx_timeout', DEFAULT_SERIAL_RX_TIMEOUT)
         self.declare_parameter('verbose_serial', False)         # logs crudos
+        # Umbrales de arranque reales; ver comentario en safety.py.
+        self.declare_parameter('pwm_deadband_drive', DEFAULT_DRIVE_DEADBAND)
+        self.declare_parameter('pwm_deadband_pivot', DEFAULT_PIVOT_DEADBAND)
+        self.declare_parameter('min_wheel_speed', DEFAULT_MIN_WHEEL_SPEED)
+        self.declare_parameter('max_wheel_speed', DEFAULT_MAX_WHEEL_SPEED)
+        self.declare_parameter('wheel_speed_pi_enabled', True)
+        self.declare_parameter('wheel_speed_pi_kp', 800.0)
+        self.declare_parameter('wheel_speed_pi_ki', 250.0)
+        self.declare_parameter('wheel_speed_pi_correction_limit', 35.0)
+        self.declare_parameter('wheel_speed_pi_integral_limit', 0.10)
+        self.declare_parameter('wheel_speed_target_scale', 0.62)
+        self.declare_parameter('left_feedforward_scale', 0.87)
+        self.declare_parameter('right_feedforward_scale', 1.00)
+        self.declare_parameter('wheel_speed_feedback_timeout', 0.15)
+        self.declare_parameter('wheel_breakaway_enabled', True)
+        self.declare_parameter('wheel_breakaway_pwm', 226)
+        self.declare_parameter('wheel_breakaway_speed', 0.03)
+        self.declare_parameter('wheel_breakaway_samples', 3)
+        self.declare_parameter('wheel_breakaway_timeout', 0.25)
 
         self.port = self.get_parameter(
             'port').get_parameter_value().string_value
@@ -71,6 +97,51 @@ class BaseDriver(Node):
             raw_rx_timeout, DEFAULT_SERIAL_RX_TIMEOUT)
         self.verbose_serial = self.get_parameter(
             'verbose_serial').get_parameter_value().bool_value
+        self.pwm_deadband_drive = check_deadband(self.get_parameter(
+            'pwm_deadband_drive').get_parameter_value().double_value)
+        self.pwm_deadband_pivot = check_deadband(self.get_parameter(
+            'pwm_deadband_pivot').get_parameter_value().double_value)
+        self.min_wheel_speed = require_finite(self.get_parameter(
+            'min_wheel_speed').get_parameter_value().double_value,
+            'min_wheel_speed')
+        self.max_wheel_speed = require_finite(self.get_parameter(
+            'max_wheel_speed').get_parameter_value().double_value,
+            'max_wheel_speed')
+        if self.max_wheel_speed <= 0.0:
+            raise ValueError("max_wheel_speed debe ser positivo")
+        if not 0.0 <= self.min_wheel_speed < self.max_wheel_speed:
+            raise ValueError(
+                "min_wheel_speed debe estar entre 0 y max_wheel_speed")
+        self.wheel_speed_pi_enabled = self.get_parameter(
+            'wheel_speed_pi_enabled').get_parameter_value().bool_value
+        self.wheel_speed_pi_kp = self.get_parameter(
+            'wheel_speed_pi_kp').get_parameter_value().double_value
+        self.wheel_speed_pi_ki = self.get_parameter(
+            'wheel_speed_pi_ki').get_parameter_value().double_value
+        self.wheel_speed_pi_correction_limit = self.get_parameter(
+            'wheel_speed_pi_correction_limit').get_parameter_value().double_value
+        self.wheel_speed_pi_integral_limit = self.get_parameter(
+            'wheel_speed_pi_integral_limit').get_parameter_value().double_value
+        self.wheel_speed_target_scale = self.get_parameter(
+            'wheel_speed_target_scale').get_parameter_value().double_value
+        self.left_feedforward_scale = self.get_parameter(
+            'left_feedforward_scale').get_parameter_value().double_value
+        self.right_feedforward_scale = self.get_parameter(
+            'right_feedforward_scale').get_parameter_value().double_value
+        raw_feedback_timeout = self.get_parameter(
+            'wheel_speed_feedback_timeout').get_parameter_value().double_value
+        self.wheel_speed_feedback_timeout = positive_timeout(
+            raw_feedback_timeout, 0.15)
+        self.wheel_breakaway_pwm = self.get_parameter(
+            'wheel_breakaway_pwm').get_parameter_value().integer_value
+        self.wheel_breakaway_enabled = self.get_parameter(
+            'wheel_breakaway_enabled').get_parameter_value().bool_value
+        self.wheel_breakaway_speed = self.get_parameter(
+            'wheel_breakaway_speed').get_parameter_value().double_value
+        self.wheel_breakaway_samples = self.get_parameter(
+            'wheel_breakaway_samples').get_parameter_value().integer_value
+        self.wheel_breakaway_timeout = self.get_parameter(
+            'wheel_breakaway_timeout').get_parameter_value().double_value
 
         if self.cmd_vel_timeout != raw_cmd_timeout:
             self.get_logger().error(
@@ -80,9 +151,46 @@ class BaseDriver(Node):
             self.get_logger().error(
                 f"serial_rx_timeout inválido ({raw_rx_timeout!r}); "
                 f"se usa el valor seguro {self.serial_rx_timeout:.3f} s")
+        require_finite(self.wheel_speed_target_scale, 'wheel_speed_target_scale')
+        if self.wheel_speed_target_scale <= 0.0:
+            raise ValueError(
+                "wheel_speed_target_scale debe ser positivo")
+        require_finite(self.left_feedforward_scale, 'left_feedforward_scale')
+        require_finite(self.right_feedforward_scale, 'right_feedforward_scale')
+        if (
+            self.left_feedforward_scale <= 0.0
+            or self.right_feedforward_scale <= 0.0
+        ):
+            raise ValueError("Los scales de feedforward deben ser positivos")
+        require_finite(self.wheel_breakaway_speed, 'wheel_breakaway_speed')
+        require_finite(self.wheel_breakaway_timeout, 'wheel_breakaway_timeout')
+        if not 0 < self.wheel_breakaway_pwm <= MAX_PWM:
+            raise ValueError("wheel_breakaway_pwm fuera de rango")
+        if self.wheel_breakaway_speed <= 0.0:
+            raise ValueError("wheel_breakaway_speed debe ser positivo")
+        if self.wheel_breakaway_samples <= 0:
+            raise ValueError("wheel_breakaway_samples debe ser positivo")
+        if self.wheel_breakaway_timeout <= 0.0:
+            raise ValueError("wheel_breakaway_timeout debe ser positivo")
+        self.left_speed_pi = WheelSpeedPI(
+            self.wheel_speed_pi_kp,
+            self.wheel_speed_pi_ki,
+            self.wheel_speed_pi_correction_limit,
+            self.wheel_speed_pi_integral_limit,
+        )
+        self.right_speed_pi = WheelSpeedPI(
+            self.wheel_speed_pi_kp,
+            self.wheel_speed_pi_ki,
+            self.wheel_speed_pi_correction_limit,
+            self.wheel_speed_pi_integral_limit,
+        )
 
         # Pub/Sub
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
+        self.pi_diag_pub = self.create_publisher(
+            Float64MultiArray, 'wheel_pi_state', 20)
+        self.breakaway_diag_pub = self.create_publisher(
+            Float64MultiArray, 'wheel_breakaway_state', 20)
         self.create_subscription(
             Twist, 'cmd_vel_safe', self.cmd_vel_callback, 10)
 
@@ -108,10 +216,22 @@ class BaseDriver(Node):
         self.desired_angular_z = 0.0
         self.pwm_left = 0
         self.pwm_right = 0
+        self.measured_left_speed = 0.0
+        self.measured_right_speed = 0.0
+        self.last_wheel_feedback_monotonic = None
+        self.pi_last_target_left = 0.0
+        self.pi_last_target_right = 0.0
+        self.breakaway_command_active = False
+        self.breakaway_active = False
+        self.breakaway_started_at = None
+        self.breakaway_last_feedback_at = None
+        self.breakaway_consecutive_samples = 0
+        self.breakaway_fault_latched = False
         self.last_cmd_monotonic = time.monotonic()
         self._stopped = True
         self._accept_motion = False
         self._shutdown_started = False
+        self._odom_ever_published = False
 
         # Serial compartido entre el hilo lector y el executor
         self.ser = None
@@ -184,6 +304,18 @@ class BaseDriver(Node):
             self.desired_angular_z = 0.0
             self.pwm_left = 0
             self.pwm_right = 0
+            self.left_speed_pi.reset()
+            self.right_speed_pi.reset()
+            self.pi_last_target_left = 0.0
+            self.pi_last_target_right = 0.0
+            self.measured_left_speed = 0.0
+            self.measured_right_speed = 0.0
+            self.last_wheel_feedback_monotonic = None
+            self.breakaway_command_active = False
+            self.breakaway_active = False
+            self.breakaway_started_at = None
+            self.breakaway_last_feedback_at = None
+            self.breakaway_consecutive_samples = 0
             self._stopped = True
             if accept_motion is not None:
                 self._accept_motion = bool(accept_motion)
@@ -342,12 +474,36 @@ class BaseDriver(Node):
         buf = bytearray()
         last_rx = time.monotonic()
         last_reset = 0.0
+        open_failures = 0
         rx_fault_active = False
         while not self._stop_event.is_set():
             ser = self.ser
             if ser is None or not ser.is_open:
                 if not self._open_serial():
+                    # Cuando el stack USB del S2 Mini se cuelga, /dev/esp32
+                    # sigue existiendo pero toda escritura da Write timeout y
+                    # reabrir nunca funciona: hasta ahora habia que desenchufar
+                    # el cable a mano. Tras 3 intentos fallidos se usa el mismo
+                    # reset USB que ya existia para la telemetria ausente.
+                    open_failures += 1
+                    now = time.monotonic()
+                    if open_failures >= 3 and now - last_reset > 10.0:
+                        self._safe_log(
+                            'error',
+                            f"{open_failures} aperturas fallidas de "
+                            f"{self.port}; se intentará reset USB")
+                        try:
+                            self._usb_reset_esp32()
+                        except Exception as error:
+                            self._safe_log(
+                                'error', self._exception_detail(
+                                    '_reader_loop/reset USB en apertura',
+                                    error), 10.0)
+                        last_reset = time.monotonic()
+                        open_failures = 0
                     self._stop_event.wait(2.0)
+                else:
+                    open_failures = 0
                 buf.clear()
                 last_rx = time.monotonic()
                 rx_fault_active = False
@@ -424,6 +580,259 @@ class BaseDriver(Node):
                         level='error')
 
     # ---------- Comandos ----------
+    def _publish_pi_diagnostic(
+        self,
+        target_left: float,
+        target_right: float,
+        pwm_left: int,
+        pwm_right: int,
+        now: float,
+    ) -> None:
+        with self._state_lock:
+            measured_left = self.measured_left_speed
+            measured_right = self.measured_right_speed
+            feedback_time = self.last_wheel_feedback_monotonic
+        feedback_age = (
+            -1.0 if feedback_time is None else now - feedback_time)
+        feedback_timeout = (
+            feedback_time is None
+            or feedback_age > self.wheel_speed_feedback_timeout)
+        message = Float64MultiArray()
+        # Orden estable:
+        # t, targets L/R, medidas L/R, errores L/R, P L/R,
+        # integrales crudas L/R, términos I L/R, correcciones L/R,
+        # PWM L/R, saturación L/R, edad feedback, timeout feedback.
+        message.data = [
+            now,
+            target_left * self.wheel_speed_target_scale,
+            target_right * self.wheel_speed_target_scale,
+            measured_left,
+            measured_right,
+            self.left_speed_pi.error,
+            self.right_speed_pi.error,
+            self.left_speed_pi.proportional,
+            self.right_speed_pi.proportional,
+            self.left_speed_pi.integral,
+            self.right_speed_pi.integral,
+            self.left_speed_pi.integral_term,
+            self.right_speed_pi.integral_term,
+            self.left_speed_pi.correction,
+            self.right_speed_pi.correction,
+            float(pwm_left),
+            float(pwm_right),
+            float(self.left_speed_pi.saturated),
+            float(self.right_speed_pi.saturated),
+            feedback_age,
+            float(feedback_timeout),
+        ]
+        self.pi_diag_pub.publish(message)
+
+    def _publish_breakaway_diagnostic(
+        self,
+        event: int,
+        now: float,
+        measured_left: float,
+        measured_right: float,
+        pwm_before_left: int,
+        pwm_before_right: int,
+        pwm_after_left: int,
+        pwm_after_right: int,
+    ) -> None:
+        started_at = (
+            -1.0 if self.breakaway_started_at is None
+            else self.breakaway_started_at)
+        duration = (
+            0.0 if self.breakaway_started_at is None
+            else max(0.0, now - self.breakaway_started_at))
+        message = Float64MultiArray()
+        # event: 1=inicio, 2=muestra, 3=transición, 4=fallo.
+        message.data = [
+            now,
+            float(event),
+            float(self.breakaway_active),
+            started_at,
+            duration,
+            float(self.breakaway_consecutive_samples),
+            measured_left,
+            measured_right,
+            float(pwm_before_left),
+            float(pwm_before_right),
+            float(pwm_after_left),
+            float(pwm_after_right),
+        ]
+        self.breakaway_diag_pub.publish(message)
+
+    def _breakaway_output(
+        self,
+        target_left: float,
+        target_right: float,
+        feedforward_left: int,
+        feedforward_right: int,
+        now: float,
+    ):
+        """Devuelve PWM de breakaway, transición o None para control PI."""
+        if not self.wheel_breakaway_enabled:
+            return None
+
+        command_nonzero = (
+            abs(target_left) >= VELOCITY_EPSILON
+            or abs(target_right) >= VELOCITY_EPSILON
+        )
+        if not command_nonzero:
+            self.breakaway_command_active = False
+            self.breakaway_active = False
+            self.breakaway_started_at = None
+            self.breakaway_last_feedback_at = None
+            self.breakaway_consecutive_samples = 0
+            self.breakaway_fault_latched = False
+            return None
+
+        if self.breakaway_fault_latched:
+            return "failure"
+
+        with self._state_lock:
+            measured_left = self.measured_left_speed
+            measured_right = self.measured_right_speed
+            feedback_at = self.last_wheel_feedback_monotonic
+        pwm_left_breakaway = (
+            0 if abs(target_left) < VELOCITY_EPSILON
+            else int(math.copysign(self.wheel_breakaway_pwm, target_left)))
+        pwm_right_breakaway = (
+            0 if abs(target_right) < VELOCITY_EPSILON
+            else int(math.copysign(self.wheel_breakaway_pwm, target_right)))
+
+        if not self.breakaway_command_active:
+            self.breakaway_command_active = True
+            self.breakaway_active = True
+            self.breakaway_started_at = now
+            self.breakaway_last_feedback_at = feedback_at
+            self.breakaway_consecutive_samples = 0
+            self.left_speed_pi.reset()
+            self.right_speed_pi.reset()
+            self.pi_last_target_left = 0.0
+            self.pi_last_target_right = 0.0
+            self._publish_breakaway_diagnostic(
+                1, now, measured_left, measured_right,
+                pwm_left_breakaway, pwm_right_breakaway,
+                pwm_left_breakaway, pwm_right_breakaway)
+            return pwm_left_breakaway, pwm_right_breakaway
+
+        if not self.breakaway_active:
+            return None
+
+        if (
+            feedback_at is not None
+            and feedback_at != self.breakaway_last_feedback_at
+        ):
+            self.breakaway_last_feedback_at = feedback_at
+            if (
+                measured_left * target_left > 0.0
+                and abs(measured_left) > self.wheel_breakaway_speed
+                and measured_right * target_right > 0.0
+                and abs(measured_right) > self.wheel_breakaway_speed
+            ):
+                self.breakaway_consecutive_samples += 1
+            else:
+                self.breakaway_consecutive_samples = 0
+
+        elapsed = now - self.breakaway_started_at
+        if (
+            self.breakaway_consecutive_samples >= self.wheel_breakaway_samples
+            and elapsed <= self.wheel_breakaway_timeout
+        ):
+            post_left = int(feedforward_left * self.left_feedforward_scale)
+            post_right = int(feedforward_right * self.right_feedforward_scale)
+            self.breakaway_active = False
+            self._publish_breakaway_diagnostic(
+                3, now, measured_left, measured_right,
+                pwm_left_breakaway, pwm_right_breakaway,
+                post_left, post_right)
+            # Primer ciclo posterior sin PI: 196/226, siempre sin salto
+            # ascendente respecto de los 226/226 del breakaway.
+            return post_left, post_right
+
+        if elapsed >= self.wheel_breakaway_timeout:
+            self.breakaway_active = False
+            self.breakaway_command_active = False
+            self.breakaway_fault_latched = True
+            self._publish_breakaway_diagnostic(
+                4, now, measured_left, measured_right,
+                pwm_left_breakaway, pwm_right_breakaway, 0, 0)
+            return "failure"
+
+        self._publish_breakaway_diagnostic(
+            2, now, measured_left, measured_right,
+            pwm_left_breakaway, pwm_right_breakaway,
+            pwm_left_breakaway, pwm_right_breakaway)
+        return pwm_left_breakaway, pwm_right_breakaway
+
+    def _apply_wheel_speed_pi(
+        self,
+        target_left: float,
+        target_right: float,
+        feedforward_left: int,
+        feedforward_right: int,
+        now: float,
+    ):
+        """Corrige cada PWM con su propio PI y feedback fresco de encoders."""
+        if not self.wheel_speed_pi_enabled:
+            return feedforward_left, feedforward_right
+
+        if (
+            abs(target_left) < VELOCITY_EPSILON
+            and abs(target_right) < VELOCITY_EPSILON
+        ):
+            self.left_speed_pi.reset()
+            self.right_speed_pi.reset()
+            self.pi_last_target_left = 0.0
+            self.pi_last_target_right = 0.0
+            return 0, 0
+
+        with self._state_lock:
+            measured_left = self.measured_left_speed
+            measured_right = self.measured_right_speed
+            feedback_time = self.last_wheel_feedback_monotonic
+
+        if (
+            feedback_time is None
+            or now - feedback_time > self.wheel_speed_feedback_timeout
+            or max(abs(measured_left), abs(measured_right))
+            < VELOCITY_EPSILON
+        ):
+            self.left_speed_pi.reset()
+            self.right_speed_pi.reset()
+            return feedforward_left, feedforward_right
+
+        if target_left * self.pi_last_target_left < 0.0:
+            self.left_speed_pi.reset()
+        if target_right * self.pi_last_target_right < 0.0:
+            self.right_speed_pi.reset()
+        self.pi_last_target_left = target_left
+        self.pi_last_target_right = target_right
+
+        scaled_left = target_left * self.wheel_speed_target_scale
+        scaled_right = target_right * self.wheel_speed_target_scale
+        if abs(target_left) < VELOCITY_EPSILON:
+            self.left_speed_pi.reset()
+            correction_left = 0.0
+            feedforward_left = 0
+        else:
+            correction_left = self.left_speed_pi.update(
+                scaled_left, measured_left, now)
+        if abs(target_right) < VELOCITY_EPSILON:
+            self.right_speed_pi.reset()
+            correction_right = 0.0
+            feedforward_right = 0
+        else:
+            correction_right = self.right_speed_pi.update(
+                scaled_right, measured_right, now)
+
+        pwm_left = int(round(feedforward_left + correction_left))
+        pwm_right = int(round(feedforward_right + correction_right))
+        pwm_left = max(-MAX_PWM, min(MAX_PWM, pwm_left))
+        pwm_right = max(-MAX_PWM, min(MAX_PWM, pwm_right))
+        return pwm_left, pwm_right
+
     def cmd_vel_callback(self, msg: Twist):
         try:
             vx = float(msg.linear.x)
@@ -440,14 +849,56 @@ class BaseDriver(Node):
                     level='error')
                 return
 
-            # Se conserva la calibración existente: pivote requiere un
-            # deadband mayor. El cálculo puro garantiza que cero sigue en cero.
-            deadband = 85.0 if abs(vx) < 0.02 else 55.0
-            maximum = wheel_speed_limit(deadband)
+            # El pivote necesita mas PWM de arranque que el avance (las
+            # ruedas rozan de costado), por eso siguen siendo dos deadbands.
+            # El calculo puro garantiza que cero sigue en cero.
+            deadband = (
+                self.pwm_deadband_pivot if abs(vx) < 0.02
+                else self.pwm_deadband_drive)
             v_left, v_right = twist_to_wheel_velocities(
-                vx, omega, self.base_width, maximum)
-            pwm_left = velocity_to_pwm(v_left, deadband)
-            pwm_right = velocity_to_pwm(v_right, deadband)
+                vx, omega, self.base_width, self.max_wheel_speed)
+            # El trim corrige la asimetria mecanica entre ruedas y se aplica
+            # sobre la VELOCIDAD, no sobre el PWM: la curva PWM->velocidad no
+            # pasa por el origen, asi que recortar un 8% de PWM no recorta un
+            # 8% de velocidad. v_left/v_right se conservan sin escalar como
+            # objetivo real de la rueda para el PI y el breakaway.
+            feedforward_left = velocity_to_pwm(
+                v_left * self.left_feedforward_scale,
+                deadband, self.min_wheel_speed, self.max_wheel_speed)
+            feedforward_right = velocity_to_pwm(
+                v_right * self.right_feedforward_scale,
+                deadband, self.min_wheel_speed, self.max_wheel_speed)
+            control_now = time.monotonic()
+            breakaway = self._breakaway_output(
+                v_left,
+                v_right,
+                feedforward_left,
+                feedforward_right,
+                control_now,
+            )
+            if breakaway == "failure":
+                self._publish_pi_diagnostic(
+                    v_left, v_right, 0, 0, control_now)
+                self.emergency_stop(
+                    "BREAKAWAY_FAILURE: una rueda no superó 0.03 m/s "
+                    "en 0.25 s",
+                    level='error',
+                )
+                return
+            if breakaway is not None:
+                pwm_left, pwm_right = breakaway
+            else:
+                # El trim ya está aplicado en el feedforward (sobre la
+                # velocidad). La corrección PI conserva su escala completa.
+                pwm_left = feedforward_left
+                pwm_right = feedforward_right
+                pwm_left, pwm_right = self._apply_wheel_speed_pi(
+                    v_left,
+                    v_right,
+                    pwm_left,
+                    pwm_right,
+                    control_now,
+                )
 
             # Defensa final antes de formar el paquete y convertir a hardware.
             require_finite(pwm_left, 'left PWM')
@@ -474,6 +925,9 @@ class BaseDriver(Node):
                 self.emergency_stop(
                     "la conexión dejó de ser válida durante el callback",
                     level='error')
+            else:
+                self._publish_pi_diagnostic(
+                    v_left, v_right, pwm_left, pwm_right, now)
         except Exception as error:
             self.emergency_stop(
                 self._exception_detail('cmd_vel_callback', error), level='error')
@@ -489,6 +943,20 @@ class BaseDriver(Node):
                 self.emergency_stop(
                     f"watchdog: sin Twist válido durante "
                     f"{now - last_command:.3f} s")
+
+            # Si el enlace con el ESP32 cae (se cuelga su stack USB), dejan de
+            # llegar ticks y /odom deja de publicarse. El EKF no se detiene por
+            # eso: sigue extrapolando la ultima velocidad, asi que en Foxglove
+            # el robot "avanza" estando quieto, el TF odom->base_link se va, y
+            # slam_toolbox intenta encajar scans identicos en poses distintas y
+            # arruina el mapa. Publicando twist cero mientras el enlace no es
+            # valido, el EKF recibe "estoy quieto" y la estimacion se congela.
+            if (
+                self._odom_ever_published
+                and not self._shutdown_started
+                and not self._motion_is_allowed()
+            ):
+                self._publish_odom(self.get_clock().now(), 0.0, 0.0)
         except Exception as error:
             self.emergency_stop(
                 self._exception_detail('watchdog_check', error), level='error')
@@ -544,8 +1012,15 @@ class BaseDriver(Node):
 
         vx = d / dt
         vth = dtheta / dt
+        with self._state_lock:
+            self.measured_left_speed = dist_left / dt
+            self.measured_right_speed = dist_right / dt
+            self.last_wheel_feedback_monotonic = time.monotonic()
 
-        # Odometry
+        self._publish_odom(now, vx, vth)
+
+    def _publish_odom(self, now, vx: float, vth: float) -> None:
+        """Publica la pose acumulada con la velocidad indicada."""
         odom_msg = Odometry()
         odom_msg.header.stamp = now.to_msg()
         odom_msg.header.frame_id = 'odom'
@@ -585,6 +1060,7 @@ class BaseDriver(Node):
         if self._shutdown_started or not self._ros_context_is_valid():
             return
         self.odom_pub.publish(odom_msg)
+        self._odom_ever_published = True
 
     # ---------- Apagado ----------
     def shutdown(self, reason: str = 'shutdown'):
