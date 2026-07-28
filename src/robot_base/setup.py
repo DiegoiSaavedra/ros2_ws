@@ -28,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
             'base_driver = robot_base.base_driver:main',
+            'scan_restamp = robot_base.scan_restamp:main',
         ],
     },
 )
