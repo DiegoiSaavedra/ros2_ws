@@ -23,9 +23,28 @@ behavior_server:
     # Jazzy publica Twist sin cabecera por defecto. Se fija explícitamente
     # para mantener el mismo tipo hasta base_driver.
     enable_stamped_cmd_vel: false
-    # Los plugins se declaran solo para poder tocar simulate_ahead_time del
-    # backup; son los mismos cuatro que Nav2 carga por defecto.
+    # Los mismos cuatro que Nav2 carga por defecto; se declaran explicitos
+    # para que quede a la vista cuales estan activos.
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+    # OJO: simulate_ahead_time es parametro DE NODO, no del plugin. En
+    # drive_on_heading.hpp:207-210 se declara como "simulate_ahead_time" a
+    # secas, SIN el prefijo del behavior. Ponerlo bajo `backup:` no hace
+    # nada: se ignora en silencio y queda el default 2.0. Estuvo mal puesto
+    # desde el 28-jul, asi que ni el 0.5 de aquel dia ni el 0.05 del 29-jul
+    # llegaron nunca al nodo.
+    #
+    # 0.05 DESACTIVA a proposito la comprobacion de colision del backup.
+    # max_cycle_count = int(cycle_frequency * simulate_ahead_time) y
+    # cycle_frequency vale 10 (timed_behavior.hpp:75), asi que int(0.5) = 0
+    # y el bucle no corre. Hace falta porque la PRIMERA iteracion evalua la
+    # pose ACTUAL (cycle_count == 0 -> desplazamiento 0, ver
+    # drive_on_heading.hpp:179-191): si el footprint ya toca una celda letal
+    # --justo cuando hace falta retroceder-- el backup falla en 0.6 ms sin
+    # evaluar ni una pose hacia atras. Medido con el robot de morro contra
+    # un mueble: coste 254 en la pose actual, letal a 0.146 m DELANTE.
+    # La proteccion de esos 15 cm la da ApproachZone del Collision Monitor,
+    # direccional y sobre /scan crudo.
+    simulate_ahead_time: 0.05
     spin:
       plugin: "nav2_behaviors::Spin"
     drive_on_heading:
@@ -34,32 +53,8 @@ behavior_server:
       plugin: "nav2_behaviors::Wait"
     backup:
       plugin: "nav2_behaviors::BackUp"
-      # 0.05 DESACTIVA a proposito la comprobacion de colision del backup.
-      # No es un ajuste fino: en drive_on_heading.hpp:179-191 el bucle es
-      #   max_cycle_count = cycle_frequency * simulate_ahead_time   (10 Hz aqui)
-      #   while (cycle_count < max_cycle_count) {
-      #     sim_position_change = cmd_vel.linear.x * (cycle_count / freq);
-      #     ...   // cycle_count == 0  ->  desplazamiento 0  ->  POSE ACTUAL
-      # o sea que la PRIMERA iteracion evalua donde esta el robot ahora. Si el
-      # footprint ya toca una celda letal --exactamente cuando hace falta
-      # retroceder-- el backup falla en 0.6 ms sin evaluar ni una pose hacia
-      # atras. Medido el 29-jul con el robot de morro contra un mueble: coste
-      # 254 en la pose actual, celda letal a 0.146 m en x=+0.131 y=+0.065, o
-      # sea DELANTE. Retroceder se alejaba de ella y aun asi quedaba vetado.
-      # Agravante: el BT limpia el costmap 2 ms antes, pero el
-      # local_collision_checker lee de un CostmapSubscriber a 5 Hz
-      # (publish_frequency), asi que todavia tiene el costmap viejo cacheado.
-      #
-      # Cualquier valor >= 0.1 da max_cycle_count >= 1 e incluye la pose
-      # actual: es binario, no hay punto medio. Con 0.05 -> int(0.5) = 0, el
-      # bucle no corre y el backup siempre se ejecuta.
-      #
-      # LO QUE SE ACEPTA: el backup no consulta el costmap. La proteccion
-      # durante esos 15 cm a 0.10 m/s la da ApproachZone del Collision
-      # Monitor, que es direccional, lee /scan EN CRUDO y proyecta el
-      # footprint 1 s segun la velocidad comandada (10 cm hacia atras): si hay
-      # algo detras, frena. Es mejor garantia que un costmap cacheado.
-      simulate_ahead_time: 0.05
+      # NO poner simulate_ahead_time aqui: es parametro de nodo y aqui se
+      # ignora. Esta arriba, al nivel de behavior_server.
 
 waypoint_follower:
   ros__parameters:

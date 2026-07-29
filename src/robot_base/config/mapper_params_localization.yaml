@@ -45,7 +45,19 @@ slam_toolbox:
     # General Parameters
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.2
+    # 0.2 -> 0.0 el 29-jul. El filtro de slam_toolbox que decide si procesar
+    # un scan mide TRASLACION, y en un pivote puro el robot no se traslada:
+    # durante todo el giro no entraba ni un scan y la pose corria por
+    # odometria pura (encoders + gyro), sin ninguna correccion del lidar.
+    # Sintoma exacto que reporto Diego: "se descuadraba un poco pero cuando
+    # avanzaba se acomodaba enseguida" -- sin correccion girando, correccion
+    # al trasladarse. Con giros chicos el error se reabsorbia; con uno de
+    # 180 grados ya no, y queda descuadrado al terminar.
+    # En 0.0 la decision pasa al filtro angular de karto (minimum_travel_
+    # heading, 0.2 rad ~ 11.5 grados), que si se dispara girando. El ritmo
+    # queda acotado por minimum_time_interval (0.5 s -> maximo 2 Hz), asi
+    # que el costo de CPU esta limitado: pasa de ~0.6 Hz a 2 Hz al andar.
+    minimum_travel_distance: 0.0
     minimum_travel_heading: 0.2
     scan_buffer_size: 5
     scan_buffer_maximum_scan_distance: 5.0
