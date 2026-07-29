@@ -25,6 +25,30 @@
           <Sequence name="ClearWaitAndRetry">
             <ClearEntireCostmap name="ClearLocalCostmap" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalCostmap" service_name="global_costmap/clear_entirely_global_costmap"/>
+            <!--
+              Unica recuperacion con movimiento, y a proposito la mas
+              predecible que hay: 15 cm marcha atras por donde el robot
+              acaba de pasar, sin girar.
+
+              Hace falta porque el fallo real observado es que tras un giro
+              el robot queda arrimado a una pared, su footprint solapa celdas
+              de coste >= 253 y el planner rechaza el punto de PARTIDA: falla
+              en 4 ms hacia cualquier destino ("no valid path found"). Limpiar
+              los costmaps no arregla eso, porque el lidar vuelve a ver la
+              pared en el siguiente scan; el robot tiene que apartarse.
+
+              Sigue sin haber spin ni giros de recuperacion. La marcha atras
+              la vigilan igual la StopZone (llega a -0.20 m) y la ApproachZone.
+            -->
+            <!--
+              backup_speed 0.10 y no 0.05: con 0.05 el driver manda PWM 114 y
+              el robot ni arranca marcha atras (la rueda loca tiene que
+              reorientarse 180 grados y eso frena mucho al salir de parado);
+              el behavior agotaba los 10 s con "Exceeded time allowance".
+              Con 0.10 el PWM sube a 187, que si tiene autoridad para romper
+              esa friccion. La distancia se mantiene corta.
+            -->
+            <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="10"/>
             <Wait wait_duration="1.0"/>
           </Sequence>
         </ReactiveFallback>

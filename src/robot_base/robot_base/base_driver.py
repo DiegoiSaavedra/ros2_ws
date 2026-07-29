@@ -23,6 +23,7 @@ from robot_base.safety import (
     DEFAULT_MAX_WHEEL_SPEED,
     DEFAULT_MIN_WHEEL_SPEED,
     DEFAULT_PIVOT_DEADBAND,
+    DEFAULT_REVERSE_DEADBAND,
     DEFAULT_SERIAL_RX_TIMEOUT,
     MAX_PWM,
     VELOCITY_EPSILON,
@@ -59,6 +60,7 @@ class BaseDriver(Node):
         self.declare_parameter('verbose_serial', False)         # logs crudos
         # Umbrales de arranque reales; ver comentario en safety.py.
         self.declare_parameter('pwm_deadband_drive', DEFAULT_DRIVE_DEADBAND)
+        self.declare_parameter('pwm_deadband_reverse', DEFAULT_REVERSE_DEADBAND)
         self.declare_parameter('pwm_deadband_pivot', DEFAULT_PIVOT_DEADBAND)
         self.declare_parameter('min_wheel_speed', DEFAULT_MIN_WHEEL_SPEED)
         self.declare_parameter('max_wheel_speed', DEFAULT_MAX_WHEEL_SPEED)
@@ -99,6 +101,8 @@ class BaseDriver(Node):
             'verbose_serial').get_parameter_value().bool_value
         self.pwm_deadband_drive = check_deadband(self.get_parameter(
             'pwm_deadband_drive').get_parameter_value().double_value)
+        self.pwm_deadband_reverse = check_deadband(self.get_parameter(
+            'pwm_deadband_reverse').get_parameter_value().double_value)
         self.pwm_deadband_pivot = check_deadband(self.get_parameter(
             'pwm_deadband_pivot').get_parameter_value().double_value)
         self.min_wheel_speed = require_finite(self.get_parameter(
@@ -849,12 +853,16 @@ class BaseDriver(Node):
                     level='error')
                 return
 
-            # El pivote necesita mas PWM de arranque que el avance (las
-            # ruedas rozan de costado), por eso siguen siendo dos deadbands.
-            # El calculo puro garantiza que cero sigue en cero.
-            deadband = (
-                self.pwm_deadband_pivot if abs(vx) < 0.02
-                else self.pwm_deadband_drive)
+            # Un deadband por sentido de movimiento: la rueda loca tiene que
+            # reorientarse para pivotar o para invertir la marcha, y eso sube
+            # mucho el PWM de arranque (200 y 160 medidos, contra 100 en
+            # avance). El calculo puro garantiza que cero sigue en cero.
+            if abs(vx) < 0.02:
+                deadband = self.pwm_deadband_pivot
+            elif vx < 0.0:
+                deadband = self.pwm_deadband_reverse
+            else:
+                deadband = self.pwm_deadband_drive
             v_left, v_right = twist_to_wheel_velocities(
                 vx, omega, self.base_width, self.max_wheel_speed)
             # El trim corrige la asimetria mecanica entre ruedas y se aplica

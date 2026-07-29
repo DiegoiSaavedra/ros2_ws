@@ -56,7 +56,8 @@ int main(int argc, char **argv) {
   setting.scan_min_range = kDefaultScanMinRange;
   setting.enable_near_debug = false;
   setting.near_debug_topic = "scan_near_debug";
-  
+  setting.fixed_beam_size = 0;
+
   // declare ros2 param
   node->declare_parameter<std::string>("product_name", product_name);
   node->declare_parameter<std::string>("topic_name", topic_name);
@@ -70,6 +71,7 @@ int main(int argc, char **argv) {
   node->declare_parameter<double>("scan_min_range", setting.scan_min_range);
   node->declare_parameter<bool>("enable_near_debug", setting.enable_near_debug);
   node->declare_parameter<std::string>("near_debug_topic", setting.near_debug_topic);
+  node->declare_parameter<int>("fixed_beam_size", setting.fixed_beam_size);
 
   // get ros2 param
   node->get_parameter("product_name", product_name);
@@ -84,6 +86,7 @@ int main(int argc, char **argv) {
   node->get_parameter("scan_min_range", setting.scan_min_range);
   node->get_parameter("enable_near_debug", setting.enable_near_debug);
   node->get_parameter("near_debug_topic", setting.near_debug_topic);
+  node->get_parameter("fixed_beam_size", setting.fixed_beam_size);
 
   if (!IsValidScanMinRange(setting.scan_min_range)) {
     RCLCPP_ERROR(
@@ -111,6 +114,9 @@ int main(int argc, char **argv) {
   RCLCPP_INFO(node->get_logger(), "<angle_crop_min>: %f", setting.angle_crop_min);
   RCLCPP_INFO(node->get_logger(), "<angle_crop_max>: %f", setting.angle_crop_max);
   RCLCPP_INFO(node->get_logger(), "<scan_min_range>: %.3f m", setting.scan_min_range);
+  RCLCPP_INFO(node->get_logger(), "<fixed_beam_size>: %d %s",
+    setting.fixed_beam_size,
+    (setting.fixed_beam_size > 1 ? "" : "(auto: tamano variable por vuelta)"));
   RCLCPP_INFO(node->get_logger(), "<enable_near_debug>: %s",
     setting.enable_near_debug ? "true" : "false");
 
@@ -222,10 +228,23 @@ void  ToLaserscanMessagePublish(ldlidar::Points2D& src,  double lidar_spin_freq,
   // diagnostico separado conserva la vuelta anterior al filtro del SDK.
   range_min = static_cast<float>(setting.scan_min_range);
   range_max = kScanMaxRange;
+  // El LD19 gira a velocidad ligeramente variable, asi que cada vuelta trae
+  // un numero distinto de puntos (503, 504, 505...). Publicando ese numero
+  // tal cual, slam_toolbox/karto registra el sensor con el tamano del primer
+  // scan y DESCARTA todos los que no coincidan:
+  //   "LaserRangeScan contains 504 range readings, expected 505"
+  // Se perdia asi buena parte de los scans, justo cuando mas falta hacen: en
+  // los giros, donde el robot se descuadraba del mapa. Con fixed_beam_size
+  // el mensaje tiene siempre el mismo numero de rayos y angle_increment
+  // constante; los puntos se reparten igual por angulo (store_point) y los
+  // huecos quedan en NaN, que es lo que ya se hacia con los puntos filtrados.
   int beam_size = static_cast<int>(src.size());
   if (beam_size <= 1) {
     RCLCPP_WARN(node->get_logger(), "Discarding scan with %d beam(s)", beam_size);
     return;
+  }
+  if (setting.fixed_beam_size > 1) {
+    beam_size = setting.fixed_beam_size;
   }
   angle_increment = (angle_max - angle_min) / (float)(beam_size -1);
   // Calculate the number of scanning points

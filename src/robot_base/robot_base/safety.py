@@ -24,8 +24,19 @@ VELOCITY_EPSILON = 0.005
 # haria que el robot girase en vez de avanzar. El mapeo reparte el rango
 # [deadband, 255] sobre [min_wheel_speed, max_wheel_speed] para que ningun
 # comando caiga en esa zona muerta.
+# Umbrales de arranque EN FRIO (desde parado, esperando entre intento e
+# intento), medidos el 28-jul por la noche. Son muy distintos segun el tipo de
+# movimiento porque la rueda loca tiene que reorientarse: girando sobre el eje
+# debe barrer 180 grados, y al invertir la marcha tambien. El barrido de la
+# manana encadenaba escalones sin parar entre ellos, asi que midio el PWM de
+# MANTENIMIENTO (100) y no el de arranque; por eso el avance siempre funciono
+# y el pivote y la marcha atras solo hacian sonar los motores.
+#   avance:       arranca con PWM 100
+#   marcha atras: PWM 114 no arranca, 158 si
+#   pivote:       PWM 147 no arranca, 200 si
 DEFAULT_DRIVE_DEADBAND = 100.0
-DEFAULT_PIVOT_DEADBAND = 80.0
+DEFAULT_REVERSE_DEADBAND = 160.0
+DEFAULT_PIVOT_DEADBAND = 200.0
 DEFAULT_MIN_WHEEL_SPEED = 0.040
 DEFAULT_MAX_WHEEL_SPEED = 0.147
 

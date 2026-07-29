@@ -35,6 +35,10 @@ struct LaserScanSetting
   double scan_min_range;
   bool enable_near_debug;
   std::string near_debug_topic;
+  // Numero fijo de rayos por mensaje. 0 = usar los puntos de cada vuelta
+  // (comportamiento original del SDK). Ver el comentario en demo.cpp:
+  // slam_toolbox/karto exige que todos los scans tengan el mismo tamano.
+  int fixed_beam_size;
 };
 
 #endif //__ROS_API_H__

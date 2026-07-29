@@ -23,6 +23,25 @@ behavior_server:
     # Jazzy publica Twist sin cabecera por defecto. Se fija explícitamente
     # para mantener el mismo tipo hasta base_driver.
     enable_stamped_cmd_vel: false
+    # Los plugins se declaran solo para poder tocar simulate_ahead_time del
+    # backup; son los mismos cuatro que Nav2 carga por defecto.
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+      # El default (2.0 s) proyecta 20 cm hacia atras a 0.10 m/s, mas de lo
+      # que el propio backup quiere recorrer (15 cm), y en el paso estrecho
+      # esa proyeccion toca pared siempre: el behavior abortaba en 0.6 ms con
+      # "Collision Ahead - Exiting DriveOnHeading" sin llegar a mover una
+      # rueda. Con 0.5 s proyecta 5 cm, suficiente para no empotrarse y sin
+      # vetar la unica maniobra que puede desatascar al robot. Mismo criterio
+      # que max_allowed_time_to_collision_up_to_carrot en RPP.
+      simulate_ahead_time: 0.5
 
 waypoint_follower:
   ros__parameters:
@@ -41,13 +60,27 @@ controller_server:
     # 0.15 m en ~1.5 s, sobra margen)
     progress_checker:
       plugin: "nav2_controller::PoseProgressChecker"
-      required_movement_radius: 0.15
+      # Relajado de 0.15 m / 4 s a 0.10 m / 6 s: en el paso estrecho la
+      # localizacion se descuadra un momento, el robot corrige y se vuelve a
+      # cuadrar solo (modo localization, el mapa fijo no se corrompe), pero
+      # durante esos segundos casi no avanza y Nav2 abortaba justo antes de
+      # que se recuperara. A 0.08 m/s (limite de SlowdownZone) recorrer 0.10 m
+      # lleva 1.25 s, asi que quedan ~4.75 s de margen para el bache. Si el
+      # robot esta realmente atascado, sigue abortando a los 6 s.
+      required_movement_radius: 0.10
       required_movement_angle: 0.25
-      movement_time_allowance: 4.0
+      movement_time_allowance: 6.0
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.08
-      yaw_goal_tolerance: 0.12
+      # Subido de 0.12 a 0.30 rad (de 7 a 17 grados) el 28-jul: la base no
+      # puede girar despacio. Por debajo de PWM 100 no arrancan las dos ruedas
+      # en pivote, asi que el giro mas lento posible son ~0.475 rad/s, o sea
+      # 2.7 grados por ciclo de control a 10 Hz. Exigir 7 grados obligaba a
+      # frenar justo en dos ciclos, y el resultado era el titubeo del giro
+      # final (motores sonando, sin llegar a colocarse). 17 grados es lo que
+      # este hardware puede cumplir de forma repetible.
+      yaw_goal_tolerance: 0.30
       stateful: true
     controller_plugins: ["FollowPath"]
     FollowPath:
@@ -67,7 +100,13 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.08
       # chequeo de colision sobre la trayectoria proyectada
       use_collision_detection: true
-      max_allowed_time_to_collision_up_to_carrot: 1.0
+      # 1.0 s daba "detected collision ahead!" en el paso estrecho sin que el
+      # Collision Monitor viera nada: el footprint padded (0.26 m) deja 7 cm
+      # por lado en un hueco de 0.40 m, y al proyectar un segundo entero el
+      # arco (que incluye la componente angular) barre mucho mas que el propio
+      # robot y toca pared. Con 0.5 s sigue mirando ~6 cm por delante, y la
+      # proteccion real la dan ApproachZone y StopZone sobre /scan en crudo.
+      max_allowed_time_to_collision_up_to_carrot: 0.5
       transform_tolerance: 0.2
       rotate_to_heading_angular_vel: 0.8
       rotate_to_heading_min_angle: 0.35
@@ -98,6 +137,13 @@ local_costmap:
       # chasis real medido desde el centro del lidar (= base_link):
       # 12 cm adelante, 15 atras, 12 por lado
       footprint: "[[0.12,0.12], [0.12,-0.12], [-0.15,-0.12], [-0.15,0.12]]"
+      # El default de Nav2 (0.01) engordaba el footprint a 0.26 m y subia el
+      # radio inscrito a 0.13. En el paso de 0.40 m eso deja 0.14 m de banda
+      # transitable (menos de 3 celdas de 0.05), y el planner devolvia
+      # "no valid path found" en cuanto el lidar veia una pared 2 cm corrida
+      # respecto al mapa. Con 0.0 la banda pasa a 0.16 m. El margen real lo
+      # siguen dando la inflacion y las zonas del Collision Monitor.
+      footprint_padding: 0.0
       plugins: ["obstacle_layer","inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -148,6 +194,13 @@ global_costmap:
       # chasis real medido desde el centro del lidar (= base_link):
       # 12 cm adelante, 15 atras, 12 por lado
       footprint: "[[0.12,0.12], [0.12,-0.12], [-0.15,-0.12], [-0.15,0.12]]"
+      # El default de Nav2 (0.01) engordaba el footprint a 0.26 m y subia el
+      # radio inscrito a 0.13. En el paso de 0.40 m eso deja 0.14 m de banda
+      # transitable (menos de 3 celdas de 0.05), y el planner devolvia
+      # "no valid path found" en cuanto el lidar veia una pared 2 cm corrida
+      # respecto al mapa. Con 0.0 la banda pasa a 0.16 m. El margen real lo
+      # siguen dando la inflacion y las zonas del Collision Monitor.
+      footprint_padding: 0.0
       plugins: ["static_layer","obstacle_layer","inflation_layer"]
       # capa estatica: usa el /map que publica slam_toolbox en vivo,
       # asi el planificador global conoce las paredes ya mapeadas
@@ -209,6 +262,22 @@ collision_monitor:
     # cuando la velocidad actual conduce hacia una colisión.
     # SlowdownZone añade 38 cm delante, 15 cm detrás y 21 cm por lateral.
     polygons: ["StopZone", "ApproachZone", "SlowdownZone"]
+    # DESACTIVADA el 28-jul por la noche. Motivo, con evidencia en el log:
+    #   23:21:25  Robot to stop due to StopZone polygon
+    #   23:21:30  Failed to make progress -> Running backup
+    #   23:21:40  Exceeded time allowance ... backup failed
+    # Entre esas lineas no hay ningun "continue normal operation": la StopZone
+    # siguio activa durante los 10 s del backup. Es un rectangulo fijo y corta
+    # TODO movimiento sin mirar la direccion, asi que bloqueaba la unica
+    # maniobra que podia desatascar al robot: apartarse marcha atras. Tambien
+    # frenaba con espacio de sobra en cuanto la localizacion se descuadraba un
+    # poco en el paso estrecho.
+    #
+    # La proteccion queda en ApproachZone, que es direccional: proyecta el
+    # footprint publicado segun la velocidad REAL comandada y solo interviene
+    # si esa velocidad lleva a una colision. Frena al avanzar hacia un
+    # obstaculo y deja retroceder para separarse, que es justo lo que hace
+    # falta. Mas SlowdownZone, que sigue limitando la velocidad al acercarse.
     StopZone:
       type: polygon
       points: "[[0.22, 0.13], [0.22, -0.13], [-0.20, -0.13], [-0.20, 0.13]]"
@@ -216,7 +285,7 @@ collision_monitor:
       min_points: 1
       visualize: true
       polygon_pub_topic: collision_monitor/stop_zone
-      enabled: true
+      enabled: false
     ApproachZone:
       type: polygon
       action_type: approach

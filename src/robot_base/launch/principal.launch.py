@@ -18,6 +18,11 @@ def generate_launch_description():
     declare_slam_mode = DeclareLaunchArgument(
         'slam_mode', default_value='localization')
 
+    # Rayos por scan del LD19; 0 vuelve al tamano variable original.
+    fixed_beam_size = LaunchConfiguration('fixed_beam_size')
+    declare_fixed_beam_size = DeclareLaunchArgument(
+        'fixed_beam_size', default_value='505')
+
     # Lanzador principal: incluye el bringup completo con sus defaults.
     # Para ver en RViz (mejor desde otra PC): use_rviz:=true
     bringup_all = IncludeLaunchDescription(
@@ -28,6 +33,7 @@ def generate_launch_description():
         launch_arguments={
             'cmd_vel_timeout': cmd_vel_timeout,
             'slam_mode': slam_mode,
+            'fixed_beam_size': fixed_beam_size,
         }.items()
     )
 
@@ -43,4 +49,5 @@ def generate_launch_description():
     )
 
     return LaunchDescription(
-        [declare_cmd_vel_timeout, declare_slam_mode, bringup_all, foxglove])
+        [declare_cmd_vel_timeout, declare_slam_mode,
+         declare_fixed_beam_size, bringup_all, foxglove])

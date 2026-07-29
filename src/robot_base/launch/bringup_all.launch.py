@@ -22,6 +22,7 @@ def generate_launch_description():
     scan_min_range    = LaunchConfiguration('scan_min_range')
     enable_near_debug = LaunchConfiguration('enable_near_debug')
     cmd_vel_timeout   = LaunchConfiguration('cmd_vel_timeout')
+    fixed_beam_size   = LaunchConfiguration('fixed_beam_size')
 
     base_link_frame  = LaunchConfiguration('base_link_frame')
     laser_frame      = LaunchConfiguration('laser_frame')
@@ -58,6 +59,13 @@ def generate_launch_description():
         # documentaba mapper_params_online_async.yaml.
         DeclareLaunchArgument('scan_min_range', default_value='0.15'),
         DeclareLaunchArgument('enable_near_debug', default_value='false'),
+        # El LD19 gira a velocidad variable y entrega 503-505 puntos por vuelta.
+        # slam_toolbox fija el tamano con el primer scan y descarta el resto
+        # ("contains 504 range readings, expected 505"), perdiendo scans justo
+        # en los giros, que es donde el robot se descuadraba del mapa. Con un
+        # tamano fijo todos los mensajes son validos. 0 = comportamiento
+        # original (tamano variable).
+        DeclareLaunchArgument('fixed_beam_size', default_value='505'),
         # Producción (Nav2 publica a 10 Hz): 0.25 s son 2.5 periodos, bien.
         # Para conducir a mano hay que subirlo: teleop_twist_keyboard de Jazzy
         # publica UN mensaje por pulsación (no tiene repeat_rate), asi que con
@@ -111,6 +119,7 @@ def generate_launch_description():
             'publish_tf': 'false',
             'scan_min_range': scan_min_range,
             'enable_near_debug': enable_near_debug,
+            'fixed_beam_size': fixed_beam_size,
         }.items()
     )
 

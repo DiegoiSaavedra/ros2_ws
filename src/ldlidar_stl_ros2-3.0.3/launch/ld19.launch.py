@@ -20,6 +20,7 @@ def generate_launch_description():
     publish_tf = LaunchConfiguration("publish_tf")
     scan_min_range = LaunchConfiguration("scan_min_range")
     enable_near_debug = LaunchConfiguration("enable_near_debug")
+    fixed_beam_size = LaunchConfiguration("fixed_beam_size")
 
     # LDROBOT LiDAR publisher node
     ldlidar_node = Node(
@@ -42,6 +43,7 @@ def generate_launch_description():
             {"scan_min_range": ParameterValue(scan_min_range, value_type=float)},
             {"enable_near_debug": ParameterValue(enable_near_debug, value_type=bool)},
             {"near_debug_topic": "scan_near_debug"},
+            {"fixed_beam_size": ParameterValue(fixed_beam_size, value_type=int)},
         ],
     )
 
@@ -59,6 +61,10 @@ def generate_launch_description():
             DeclareLaunchArgument("publish_tf", default_value="false"),
             DeclareLaunchArgument("scan_min_range", default_value="0.02"),
             DeclareLaunchArgument("enable_near_debug", default_value="false"),
+            # 0 = tamano variable por vuelta (original). Con un valor fijo
+            # todos los scans traen los mismos rayos y slam_toolbox deja de
+            # descartarlos ("contains 504 range readings, expected 505").
+            DeclareLaunchArgument("fixed_beam_size", default_value="0"),
             ldlidar_node,
             base_link_to_laser_tf_node,
         ]
