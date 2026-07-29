@@ -34,14 +34,32 @@ behavior_server:
       plugin: "nav2_behaviors::Wait"
     backup:
       plugin: "nav2_behaviors::BackUp"
-      # El default (2.0 s) proyecta 20 cm hacia atras a 0.10 m/s, mas de lo
-      # que el propio backup quiere recorrer (15 cm), y en el paso estrecho
-      # esa proyeccion toca pared siempre: el behavior abortaba en 0.6 ms con
-      # "Collision Ahead - Exiting DriveOnHeading" sin llegar a mover una
-      # rueda. Con 0.5 s proyecta 5 cm, suficiente para no empotrarse y sin
-      # vetar la unica maniobra que puede desatascar al robot. Mismo criterio
-      # que max_allowed_time_to_collision_up_to_carrot en RPP.
-      simulate_ahead_time: 0.5
+      # 0.05 DESACTIVA a proposito la comprobacion de colision del backup.
+      # No es un ajuste fino: en drive_on_heading.hpp:179-191 el bucle es
+      #   max_cycle_count = cycle_frequency * simulate_ahead_time   (10 Hz aqui)
+      #   while (cycle_count < max_cycle_count) {
+      #     sim_position_change = cmd_vel.linear.x * (cycle_count / freq);
+      #     ...   // cycle_count == 0  ->  desplazamiento 0  ->  POSE ACTUAL
+      # o sea que la PRIMERA iteracion evalua donde esta el robot ahora. Si el
+      # footprint ya toca una celda letal --exactamente cuando hace falta
+      # retroceder-- el backup falla en 0.6 ms sin evaluar ni una pose hacia
+      # atras. Medido el 29-jul con el robot de morro contra un mueble: coste
+      # 254 en la pose actual, celda letal a 0.146 m en x=+0.131 y=+0.065, o
+      # sea DELANTE. Retroceder se alejaba de ella y aun asi quedaba vetado.
+      # Agravante: el BT limpia el costmap 2 ms antes, pero el
+      # local_collision_checker lee de un CostmapSubscriber a 5 Hz
+      # (publish_frequency), asi que todavia tiene el costmap viejo cacheado.
+      #
+      # Cualquier valor >= 0.1 da max_cycle_count >= 1 e incluye la pose
+      # actual: es binario, no hay punto medio. Con 0.05 -> int(0.5) = 0, el
+      # bucle no corre y el backup siempre se ejecuta.
+      #
+      # LO QUE SE ACEPTA: el backup no consulta el costmap. La proteccion
+      # durante esos 15 cm a 0.10 m/s la da ApproachZone del Collision
+      # Monitor, que es direccional, lee /scan EN CRUDO y proyecta el
+      # footprint 1 s segun la velocidad comandada (10 cm hacia atras): si hay
+      # algo detras, frena. Es mejor garantia que un costmap cacheado.
+      simulate_ahead_time: 0.05
 
 waypoint_follower:
   ros__parameters:
@@ -88,6 +106,9 @@ controller_server:
       # el robot da ~0.18 m/s de maxima a PWM 255 (medido); se navega
       # por debajo de eso para que el controlador tenga margen
       desired_linear_vel: 0.12
+      # Probado 0.20 el 29-jul creyendo que RPP recortaba la curva al entrar
+      # al paso: NO cambio nada (descentrado 16.4 cm antes, 16.3 cm despues),
+      # asi que se revierte a 0.3. El descentrado no viene del lookahead.
       min_lookahead_dist: 0.3
       max_lookahead_dist: 0.9
       lookahead_time: 1.5
@@ -108,6 +129,11 @@ controller_server:
       # proteccion real la dan ApproachZone y StopZone sobre /scan en crudo.
       max_allowed_time_to_collision_up_to_carrot: 0.5
       transform_tolerance: 0.2
+      # Se probo en false el 29-jul (hipotesis: el pivote barria la esquina
+      # trasera contra la pared). NO arreglo nada -- el fallo se repitio
+      # identico -- y ademas empeoro la movilidad: sin pivote el robot se
+      # arrastra para orientarse y le cuesta llegar al objetivo. Se vuelve al
+      # default (true), que es lo que da buena maniobrabilidad en esta base.
       rotate_to_heading_angular_vel: 0.8
       rotate_to_heading_min_angle: 0.35
       max_angular_accel: 1.5
@@ -134,9 +160,13 @@ local_costmap:
       rolling_window: true
       width: 6
       height: 6
-      # chasis real medido desde el centro del lidar (= base_link):
-      # 12 cm adelante, 15 atras, 12 por lado
-      footprint: "[[0.12,0.12], [0.12,-0.12], [-0.15,-0.12], [-0.15,0.12]]"
+      # MEDIDO con cinta el 29-jul desde el centro del lidar (= base_link):
+      # adelante 11, atras 15, izquierda 11, derecha 11 cm. Simetrico: el
+      # lidar esta bien centrado. Antes decia 0.12 a los lados y adelante,
+      # 1 cm de mas por lado que en el paso estrecho (0.475 m) se come el 9%
+      # de la holgura real. El radio inscrito baja de 0.12 a 0.11 (anillo de
+      # inflacion mas chico) y el circunscrito de 0.192 a 0.186.
+      footprint: "[[0.11,0.11], [0.11,-0.11], [-0.15,-0.11], [-0.15,0.11]]"
       # El default de Nav2 (0.01) engordaba el footprint a 0.26 m y subia el
       # radio inscrito a 0.13. En el paso de 0.40 m eso deja 0.14 m de banda
       # transitable (menos de 3 celdas de 0.05), y el planner devolvia
@@ -191,9 +221,13 @@ global_costmap:
       rolling_window: false
       width: 20
       height: 20
-      # chasis real medido desde el centro del lidar (= base_link):
-      # 12 cm adelante, 15 atras, 12 por lado
-      footprint: "[[0.12,0.12], [0.12,-0.12], [-0.15,-0.12], [-0.15,0.12]]"
+      # MEDIDO con cinta el 29-jul desde el centro del lidar (= base_link):
+      # adelante 11, atras 15, izquierda 11, derecha 11 cm. Simetrico: el
+      # lidar esta bien centrado. Antes decia 0.12 a los lados y adelante,
+      # 1 cm de mas por lado que en el paso estrecho (0.475 m) se come el 9%
+      # de la holgura real. El radio inscrito baja de 0.12 a 0.11 (anillo de
+      # inflacion mas chico) y el circunscrito de 0.192 a 0.186.
+      footprint: "[[0.11,0.11], [0.11,-0.11], [-0.15,-0.11], [-0.15,0.11]]"
       # El default de Nav2 (0.01) engordaba el footprint a 0.26 m y subia el
       # radio inscrito a 0.13. En el paso de 0.40 m eso deja 0.14 m de banda
       # transitable (menos de 3 celdas de 0.05), y el planner devolvia

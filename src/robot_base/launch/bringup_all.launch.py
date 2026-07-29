@@ -49,15 +49,26 @@ def generate_launch_description():
         # RViz consume mucha CPU en la Pi: actívalo con use_rviz:=true
         DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('publish_laser_tf', default_value='true'),
-        # base_link es el centro del lidar y el chasis llega a 12 cm por lado,
-        # asi que TODO retorno por debajo de ~0.12 m esta fisicamente dentro
-        # del propio robot: son autogolpes del soporte de la camara y de los
-        # cables (3-9 cm). Con el 0.02 anterior esos puntos fantasma llegaban
-        # a /scan, y como Collision Monitor lee /scan en crudo caian siempre
-        # dentro de la StopZone: el robot frenaba "sin motivo" con espacio de
-        # sobra, estuviera donde estuviera. 0.15 es el mismo valor que ya
-        # documentaba mapper_params_online_async.yaml.
-        DeclareLaunchArgument('scan_min_range', default_value='0.15'),
+        # MEDIDO el 29-jul con el robot en medio de la habitacion y el filtro
+        # abierto del todo (enable_near_debug:=true publica /scan_near_debug
+        # con range_min 0.001): de 505 rayos, CERO caen por debajo de 0.30 m y
+        # la distancia minima es 0.47 m. O sea que el lidar NO se ve a si
+        # mismo: no hay autogolpes que filtrar.
+        #
+        # El 0.15 que estuvo aqui el 28-jul se puso creyendo que habia
+        # autogolpes del soporte de la camara y los cables a 3-9 cm. Esa
+        # premisa era falsa, y el filtro salia carisimo: un retorno por debajo
+        # del minimo se vuelve NaN en el driver (demo.cpp) y laser_geometry lo
+        # descarta al proyectar, asi que la pared no queda marcada NI limpiada
+        # -- simplemente no existe. Con el pasillo a 12-13 cm del centro del
+        # lidar (medido con cinta), Nav2 y Collision Monitor quedaban ciegos
+        # justo contra la pared que tenian que esquivar.
+        #
+        # 0.05 deja ~7 cm de margen sobre esos 12-13 cm y aun descarta ruido
+        # absurdo por debajo de 5 cm. Si se vuelve a montar la D435 u otra
+        # cosa a la altura del lidar (z=0.18), hay que RE-MEDIR con
+        # enable_near_debug en vez de volver a subir este numero a ojo.
+        DeclareLaunchArgument('scan_min_range', default_value='0.05'),
         DeclareLaunchArgument('enable_near_debug', default_value='false'),
         # El LD19 gira a velocidad variable y entrega 503-505 puntos por vuelta.
         # slam_toolbox fija el tamano con el primer scan y descarta el resto

@@ -30,9 +30,11 @@ slam_toolbox:
     transform_publish_period: 0.02 #if 0 never publishes odometry
     map_update_interval: 5.0
     resolution: 0.05
-    # Mismo valor que el filtro del driver: por debajo de 0.15 m los retornos
-    # caen dentro del propio chasis (autogolpes del soporte de la camara).
-    min_laser_range: 0.15
+    # Mismo valor que el filtro del driver (bringup_all.launch.py). Bajado de
+    # 0.15 a 0.05 el 29-jul: se midio que no hay autogolpes (cero retornos por
+    # debajo de 0.30 m con el filtro abierto) y el 0.15 borraba las paredes del
+    # pasillo, que estan a 12-13 cm del centro del lidar.
+    min_laser_range: 0.05
     max_laser_range: 12.0  # alcance real del LD19
     minimum_time_interval: 0.5
     transform_timeout: 0.2

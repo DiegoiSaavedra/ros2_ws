@@ -1,12 +1,26 @@
 <!--
   Conservative NavigateToPose tree.
   Replans at 1 Hz during normal navigation. On a recoverable planning or
-  control failure, it clears both costmaps, waits briefly, and retries the
-  complete navigation pipeline once. No motion recovery actions are used.
+  control failure, it clears both costmaps, retrocede 15 cm y espera, y
+  reintenta la tuberia completa. La marcha atras es la unica recuperacion
+  con movimiento: no hay spin ni giros.
 -->
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
-    <RecoveryNode number_of_retries="1" name="NavigateConservativeRecovery">
+    <!--
+      1 -> 3 el 29-jul. Con 1 sola recuperacion alcanzaba mientras el BackUp
+      SIEMPRE fallaba (su chequeo de colision evaluaba la pose actual, ver
+      backup.simulate_ahead_time en nav2_params.yaml): reintentar no servia
+      de nada. Ahora el backup si se ejecuta, y una sola recuperacion se
+      agota demasiado pronto. Caso medido: a los 729 s se colgo el ESP32, el
+      robot no pudo moverse 6 s, salto el progress checker y se consumio la
+      unica recuperacion; el siguiente fallo real, 10 s despues, ya no tuvo
+      ninguna y el goal murio sin intentar nada. Una preempcion de goal no
+      reinicia el contador.
+      3 = hasta 45 cm de retroceso acumulado, suficiente para salir de un
+      rincon sin convertirse en un bucle infinito de reintentos.
+    -->
+    <RecoveryNode number_of_retries="3" name="NavigateConservativeRecovery">
       <PipelineSequence name="NavigateWithReplanning">
         <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
         <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
