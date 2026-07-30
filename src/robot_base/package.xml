@@ -13,7 +13,9 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
 
   <!-- Dependencias de test que ya estaban en la plantilla -->
   <test_depend>ament_copyright</test_depend>
@@ -31,5 +33,5 @@
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
 </package>
-

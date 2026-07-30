@@ -1,0 +1,94 @@
+slam_toolbox:
+  ros__parameters:
+
+    # Plugin params
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ROS Parameters
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    mode: localization
+
+    # Mapa fijo grabado con teleop el 28-jul-2026 (sin extension: slam_toolbox
+    # abre casa.posegraph y casa.data). Localizando contra un mapa fijo, un
+    # descuadre puntual en un giro se recupera solo y NO puede corromper el
+    # mapa, que era lo que pasaba en modo mapping.
+    map_file_name: /home/diego/maps/casa_20260728/casa
+    # Arranca en la pose donde empezo el mapeo. Si el robot no esta ahi al
+    # encender, corregir con "2D Pose Estimate" en Foxglove/RViz (/initialpose).
+    map_start_at_dock: true
+
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02 #if 0 never publishes odometry
+    map_update_interval: 5.0
+    resolution: 0.05
+    # Mismo valor que el filtro del driver (bringup_all.launch.py). Bajado de
+    # 0.15 a 0.05 el 29-jul: se midio que no hay autogolpes (cero retornos por
+    # debajo de 0.30 m con el filtro abierto) y el 0.15 borraba las paredes del
+    # pasillo, que estan a 12-13 cm del centro del lidar.
+    min_laser_range: 0.05
+    max_laser_range: 12.0  # alcance real del LD19
+    minimum_time_interval: 0.5
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: false  # ahorra RAM/CPU en la Pi
+
+    # General Parameters
+    use_scan_matching: true
+    use_scan_barycenter: true
+    # 0.2 -> 0.0 el 29-jul. El filtro de slam_toolbox que decide si procesar
+    # un scan mide TRASLACION, y en un pivote puro el robot no se traslada:
+    # durante todo el giro no entraba ni un scan y la pose corria por
+    # odometria pura (encoders + gyro), sin ninguna correccion del lidar.
+    # Sintoma exacto que reporto Diego: "se descuadraba un poco pero cuando
+    # avanzaba se acomodaba enseguida" -- sin correccion girando, correccion
+    # al trasladarse. Con giros chicos el error se reabsorbia; con uno de
+    # 180 grados ya no, y queda descuadrado al terminar.
+    # En 0.0 la decision pasa al filtro angular de karto (minimum_travel_
+    # heading, 0.2 rad ~ 11.5 grados), que si se dispara girando. El ritmo
+    # queda acotado por minimum_time_interval (0.5 s -> maximo 2 Hz), asi
+    # que el costo de CPU esta limitado: pasa de ~0.6 Hz a 2 Hz al andar.
+    minimum_travel_distance: 0.0
+    minimum_travel_heading: 0.2
+    scan_buffer_size: 5
+    scan_buffer_maximum_scan_distance: 5.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 1.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Correlation Parameters - Correlation Parameters
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Correlation Parameters - Loop Closure Parameters
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan Matcher Parameters
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+    min_pass_through: 2
+    occupancy_threshold: 0.1

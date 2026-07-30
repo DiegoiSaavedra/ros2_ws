@@ -1,32 +1,5 @@
-# ROS 2 workspace build artifacts
-/build/
-/install/
-/log/
-
-# Colcon
-.colcon/
-
-# Python
+build/
+install/
+log/
 __pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# C/C++ / CMake
-CMakeCache.txt
-CMakeFiles/
-cmake-build-*/
-*.o
-*.obj
-
-# IDEs
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Misc
-*.swp
+*.pyc

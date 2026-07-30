@@ -107,6 +107,9 @@ class LDLidarDriver {
   */
   LidarStatus GetLaserScanData(Points2D& dst, int64_t timeout = 1000);
 
+  LidarStatus GetLaserScanData(Points2D& dst, Points2D& raw_dst,
+                               int64_t timeout = 1000);
+
   LidarStatus GetLaserScanData(LaserScan& dst, int64_t timeout = 1000);
 
   /**

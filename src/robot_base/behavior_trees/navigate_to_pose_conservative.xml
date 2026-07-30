@@ -1,0 +1,72 @@
+<!--
+  Conservative NavigateToPose tree.
+  Replans at 1 Hz during normal navigation. On a recoverable planning or
+  control failure, it clears both costmaps, retrocede 15 cm y espera, y
+  reintenta la tuberia completa. La marcha atras es la unica recuperacion
+  con movimiento: no hay spin ni giros.
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <!--
+      1 -> 3 el 29-jul. Con 1 sola recuperacion alcanzaba mientras el BackUp
+      SIEMPRE fallaba (su chequeo de colision evaluaba la pose actual, ver
+      backup.simulate_ahead_time en nav2_params.yaml): reintentar no servia
+      de nada. Ahora el backup si se ejecuta, y una sola recuperacion se
+      agota demasiado pronto. Caso medido: a los 729 s se colgo el ESP32, el
+      robot no pudo moverse 6 s, salto el progress checker y se consumio la
+      unica recuperacion; el siguiente fallo real, 10 s despues, ya no tuvo
+      ninguna y el goal murio sin intentar nada. Una preempcion de goal no
+      reinicia el contador.
+      3 = hasta 45 cm de retroceso acumulado, suficiente para salir de un
+      rincon sin convertirse en un bucle infinito de reintentos.
+    -->
+    <RecoveryNode number_of_retries="3" name="NavigateConservativeRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+        <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
+        <RateController hz="1.0">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
+        </RateController>
+        <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}"/>
+      </PipelineSequence>
+      <Sequence name="ConservativeRecovery">
+        <Fallback name="RecoveryIsApplicable">
+          <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+          <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}"/>
+        </Fallback>
+        <ReactiveFallback name="RetryOrAcceptUpdatedGoal">
+          <GoalUpdated/>
+          <Sequence name="ClearWaitAndRetry">
+            <ClearEntireCostmap name="ClearLocalCostmap" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap" service_name="global_costmap/clear_entirely_global_costmap"/>
+            <!--
+              Unica recuperacion con movimiento, y a proposito la mas
+              predecible que hay: 15 cm marcha atras por donde el robot
+              acaba de pasar, sin girar.
+
+              Hace falta porque el fallo real observado es que tras un giro
+              el robot queda arrimado a una pared, su footprint solapa celdas
+              de coste >= 253 y el planner rechaza el punto de PARTIDA: falla
+              en 4 ms hacia cualquier destino ("no valid path found"). Limpiar
+              los costmaps no arregla eso, porque el lidar vuelve a ver la
+              pared en el siguiente scan; el robot tiene que apartarse.
+
+              Sigue sin haber spin ni giros de recuperacion. La marcha atras
+              la vigilan igual la StopZone (llega a -0.20 m) y la ApproachZone.
+            -->
+            <!--
+              backup_speed 0.10 y no 0.05: con 0.05 el driver manda PWM 114 y
+              el robot ni arranca marcha atras (la rueda loca tiene que
+              reorientarse 180 grados y eso frena mucho al salir de parado);
+              el behavior agotaba los 10 s con "Exceeded time allowance".
+              Con 0.10 el PWM sube a 187, que si tiene autoridad para romper
+              esa friccion. La distancia se mantiene corta.
+            -->
+            <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="10"/>
+            <Wait wait_duration="1.0"/>
+          </Sequence>
+        </ReactiveFallback>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

@@ -13,10 +13,14 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     publish_tf = LaunchConfiguration("publish_tf")
+    scan_min_range = LaunchConfiguration("scan_min_range")
+    enable_near_debug = LaunchConfiguration("enable_near_debug")
+    fixed_beam_size = LaunchConfiguration("fixed_beam_size")
 
     # LDROBOT LiDAR publisher node
     ldlidar_node = Node(
@@ -24,16 +28,22 @@ def generate_launch_description():
         executable="ldlidar_stl_ros2_node",
         name="LD19",
         output="screen",
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[
             {"product_name": "LDLiDAR_LD19"},
             {"topic_name": "scan"},
             {"frame_id": "base_laser"},
-            {"port_name": "/dev/ttyUSB0"},
+            {"port_name": "/dev/ldlidar"},  # symlink estable (regla udev)
             {"port_baudrate": 230400},
             {"laser_scan_dir": True},
             {"enable_angle_crop_func": False},
             {"angle_crop_min": 135.0},
             {"angle_crop_max": 225.0},
+            {"scan_min_range": ParameterValue(scan_min_range, value_type=float)},
+            {"enable_near_debug": ParameterValue(enable_near_debug, value_type=bool)},
+            {"near_debug_topic": "scan_near_debug"},
+            {"fixed_beam_size": ParameterValue(fixed_beam_size, value_type=int)},
         ],
     )
 
@@ -49,8 +59,13 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("publish_tf", default_value="false"),
+            DeclareLaunchArgument("scan_min_range", default_value="0.02"),
+            DeclareLaunchArgument("enable_near_debug", default_value="false"),
+            # 0 = tamano variable por vuelta (original). Con un valor fijo
+            # todos los scans traen los mismos rayos y slam_toolbox deja de
+            # descartarlos ("contains 504 range readings, expected 505").
+            DeclareLaunchArgument("fixed_beam_size", default_value="0"),
             ldlidar_node,
             base_link_to_laser_tf_node,
         ]
     )
-
