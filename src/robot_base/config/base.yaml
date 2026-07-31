@@ -87,7 +87,43 @@ base_driver:
     wheel_breakaway_speed: 0.03
     wheel_breakaway_samples: 2
     wheel_breakaway_timeout: 0.40
-    # Solo pivote: en avance el deadband de 100 ya arranca las dos ruedas, y
-    # meter 226 ahi cambiaria el comportamiento del pasillo validado en
-    # becef4a sin arreglar nada.
-    wheel_breakaway_pivot_only: true
+    # Un interruptor por sentido. Arranco solo en pivote el 30-jul y se
+    # extendio a los tres el 31-jul: los tres tienen el mismo problema, un
+    # PWM de arranque en frio muy por encima del de mantenimiento (100 / 160
+    # / 200 medidos, contra ~100 de mantenimiento en los tres).
+    #
+    # Motivo medido para el avance: el 31-jul a las 11:14 el robot estuvo
+    # 5.2 s inmovil con una orden de 0.050 m/s pasando, que mapea a PWM
+    # 113/108 -- apenas por encima del deadband de 100, que es el umbral de
+    # arranque EN FRIO. Se quedo en el filo y no rompio la friccion.
+    #
+    # Motivo para la marcha atras: el BackUp del BT tuvo que subir a
+    # backup_speed 0.10 porque con 0.05 (PWM 114) el robot ni arrancaba. Con
+    # el golpe la recuperacion puede ser lenta y controlada en vez de un
+    # empujon.
+    #
+    # EL AVANCE QUEDA EN false. Se probo en true el 31-jul y se revirtio en
+    # la misma sesion. Sintomas: doble tiron visible en cada arranque (la
+    # firma del golpe: 226 y caida a ~113), y sobre todo el enlace con el
+    # ESP32 se cayo en plena prueba -- SerialTimeoutException al escribir,
+    # 3 aperturas fallidas de /dev/esp32 y reset USB automatico -- seguido
+    # de watchdogs repetidos por falta de Twist y de la Pi ahogada (EKF
+    # tardando 0.327 s por ciclo contra ~0.04, slam_toolbox descartando
+    # scans por cola llena). La bateria estaba cargada.
+    #
+    # OJO, CONTRAEVIDENCIA: la primera sospecha fue el pico de corriente
+    # (226 en las dos ruedas hacia el mismo lado). Es DEBIL: el golpe de
+    # PIVOTE ya estaba activo en la corrida limpia de 8/8, dispara los
+    # mismos 226 una vez por giro de extremo, o sea con frecuencia parecida
+    # a los arranques de avance, y corrio 203 s sin caerse el enlace. Lo
+    # mas probable es el problema de siempre del ESP32/USB: sintomas
+    # identicos a los del 9-jul, donde la causa fue un CABLE USB malo.
+    # Sigue pendiente igual asegurar/soldar el conector de motores.
+    #
+    # El avance era ademas la pata con evidencia mas debil: su deadband de
+    # 100 ya es el umbral de arranque en frio medido. El caso que lo
+    # motivaba (5.2 s inmovil a PWM 113 el 31-jul a las 11:14) ocurrio UNA
+    # vez en toda la sesion. No justifica el riesgo.
+    wheel_breakaway_on_pivot: true
+    wheel_breakaway_on_reverse: true
+    wheel_breakaway_on_drive: false

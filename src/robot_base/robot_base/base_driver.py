@@ -78,7 +78,9 @@ class BaseDriver(Node):
         self.declare_parameter('wheel_breakaway_speed', 0.03)
         self.declare_parameter('wheel_breakaway_samples', 3)
         self.declare_parameter('wheel_breakaway_timeout', 0.25)
-        self.declare_parameter('wheel_breakaway_pivot_only', True)
+        self.declare_parameter('wheel_breakaway_on_pivot', True)
+        self.declare_parameter('wheel_breakaway_on_reverse', True)
+        self.declare_parameter('wheel_breakaway_on_drive', True)
 
         self.port = self.get_parameter(
             'port').get_parameter_value().string_value
@@ -147,8 +149,17 @@ class BaseDriver(Node):
             'wheel_breakaway_samples').get_parameter_value().integer_value
         self.wheel_breakaway_timeout = self.get_parameter(
             'wheel_breakaway_timeout').get_parameter_value().double_value
-        self.wheel_breakaway_pivot_only = self.get_parameter(
-            'wheel_breakaway_pivot_only').get_parameter_value().bool_value
+        # Un interruptor por sentido de arranque. Los tres tienen su propio
+        # umbral de friccion estatica (ver la tabla de safety.py), asi que
+        # tiene sentido poder habilitarlos por separado al calibrar.
+        self.breakaway_modes = {
+            'pivot': self.get_parameter(
+                'wheel_breakaway_on_pivot').get_parameter_value().bool_value,
+            'reverse': self.get_parameter(
+                'wheel_breakaway_on_reverse').get_parameter_value().bool_value,
+            'drive': self.get_parameter(
+                'wheel_breakaway_on_drive').get_parameter_value().bool_value,
+        }
 
         if self.cmd_vel_timeout != raw_cmd_timeout:
             self.get_logger().error(
@@ -676,7 +687,7 @@ class BaseDriver(Node):
         feedforward_left: int,
         feedforward_right: int,
         now: float,
-        is_pivot: bool,
+        motion_kind: str,
     ):
         """Devuelve PWM de breakaway, transición o None para control PI."""
         if not self.wheel_breakaway_enabled:
@@ -695,15 +706,17 @@ class BaseDriver(Node):
             self.breakaway_fault_latched = False
             return None
 
-        # El golpe se limita al pivote (30-jul-2026). Es el unico arranque
-        # donde el PWM de romper la friccion esta muy por encima del de
-        # mantener el movimiento: 200 contra ~100, porque la rueda loca tiene
-        # que reorientarse 180 grados. En avance el deadband de 100 ya
-        # arranca las dos ruedas, asi que meter 226 ahi no arregla nada y si
-        # cambiaria el comportamiento del pasillo, que quedo validado en
-        # becef4a. No se toca el latch de fallo: solo lo limpia un comando
-        # cero, igual que antes.
-        if self.wheel_breakaway_pivot_only and not is_pivot:
+        # El golpe empezo solo en pivote (30-jul) y se extendio a los tres
+        # sentidos el 31-jul: los tres tienen el mismo problema de fondo, un
+        # PWM de arranque en frio muy por encima del de mantenimiento.
+        # Medido: a las 11:14 del 31-jul el robot estuvo 5.2 s inmovil con
+        # una orden de avance de 0.050 m/s pasando (PWM 113/108, apenas por
+        # encima del deadband de 100), y el comentario del BackUp en el BT
+        # documenta que con backup_speed 0.05 "el robot ni arranca".
+        # Cuando la base YA se esta moviendo el golpe se autolimita: los
+        # encoders confirman en la primera muestra y suelta enseguida.
+        # No se toca el latch de fallo: solo lo limpia un comando cero.
+        if not self.breakaway_modes.get(motion_kind, False):
             self.breakaway_command_active = False
             self.breakaway_active = False
             self.breakaway_started_at = None
@@ -881,12 +894,14 @@ class BaseDriver(Node):
             # reorientarse para pivotar o para invertir la marcha, y eso sube
             # mucho el PWM de arranque (200 y 160 medidos, contra 100 en
             # avance). El calculo puro garantiza que cero sigue en cero.
-            is_pivot = abs(vx) < 0.02
-            if is_pivot:
+            if abs(vx) < 0.02:
+                motion_kind = 'pivot'
                 deadband = self.pwm_deadband_pivot
             elif vx < 0.0:
+                motion_kind = 'reverse'
                 deadband = self.pwm_deadband_reverse
             else:
+                motion_kind = 'drive'
                 deadband = self.pwm_deadband_drive
             v_left, v_right = twist_to_wheel_velocities(
                 vx, omega, self.base_width, self.max_wheel_speed)
@@ -908,7 +923,7 @@ class BaseDriver(Node):
                 feedforward_left,
                 feedforward_right,
                 control_now,
-                is_pivot,
+                motion_kind,
             )
             if breakaway == "failure":
                 self._publish_pi_diagnostic(
