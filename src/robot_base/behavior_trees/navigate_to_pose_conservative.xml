@@ -56,12 +56,40 @@
               la vigilan igual la StopZone (llega a -0.20 m) y la ApproachZone.
             -->
             <!--
-              backup_speed 0.10 y no 0.05: con 0.05 el driver manda PWM 114 y
-              el robot ni arranca marcha atras (la rueda loca tiene que
-              reorientarse 180 grados y eso frena mucho al salir de parado);
-              el behavior agotaba los 10 s con "Exceeded time allowance".
-              Con 0.10 el PWM sube a 187, que si tiene autoridad para romper
-              esa friccion. La distancia se mantiene corta.
+              backup_speed SE QUEDA EN 0.10. Se probo 0.05 el 31-jul-2026 y
+              se revirtio en la misma sesion. Vale la pena entender por que,
+              porque el motivo NO es el que decia el comentario original.
+
+              Motivo original: con 0.05 el driver mandaba PWM 114 y el robot
+              ni arrancaba marcha atras. Ese motivo YA NO APLICA: el golpe y
+              sosten (wheel_breakaway_on_reverse en base.yaml) rompe la
+              friccion con 226 y despues suelta. Verificado en piso, 4
+              arranques desde parado a -0.05 m/s: arranca siempre.
+
+              MOTIVO REAL, medido: el 0.10 tambien da colchon contra el
+              estrangulamiento de la ApproachZone, y eso sigue haciendo
+              falta. La accion "approach" del Collision Monitor no corta la
+              velocidad, la ESCALA segun el tiempo hasta la colision. Con
+              0.10, un escalado al 30% deja 0.03 m/s: en los 10 s de
+              time_allowance recorre 30 cm, el doble de los 15 que hacen
+              falta. Con 0.05 el mismo escalado deja 0.015 m/s, o sea
+              exactamente 0.15 m en 10 s: margen CERO.
+
+              Se vio limpio en la corrida de las 14:38. El unico backup que
+              completo (3.7 s) fue el que tuvo la ApproachZone en "continue
+              normal operation"; los tres que fallaron por "Exceeded time
+              allowance" tenian "Robot to approach for 1.000000 seconds"
+              corriendo encima. Un backup a 0.05 solo funciona cuando nada lo
+              estorba, y una recuperacion por definicion ocurre estorbada.
+
+              Si algun dia se quiere un retroceso mas suave, la palanca no es
+              backup_speed sino subir time_allowance en proporcion.
+
+              El DriveOnHeading de abajo SE QUEDA en 0.10, y no es un olvido:
+              el golpe esta apagado en avance (wheel_breakaway_on_drive:
+              false, ver el motivo en base.yaml), asi que ahi 0.05 volveria a
+              dar PWM ~114 sin nadie que rompa la friccion. Es exactamente el
+              caso que dejo al robot 5.2 s inmovil el 31-jul a las 11:14.
             -->
             <!--
               SEGUNDA CARTA, agregada el 30-jul. Lee asi: intenta apartarte

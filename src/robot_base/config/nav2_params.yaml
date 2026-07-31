@@ -166,7 +166,26 @@ planner_server:
       # center of aisles more exactly"). Para un robot de 22 cm en un paso
       # de 50 cm, centrar no es un lujo: son 14 cm de aire por lado en vez
       # de 4. Cuesta algo mas de CPU al planificar.
-      cost_travel_multiplier: 3.0
+      #
+      # 3.0 -> 5.0 el 31-jul-2026. El 3.0 mejoro mucho pero NO alcanzo: la
+      # misma geometria del 30-jul volvio a repetirse (hueco 0.500 m, aire
+      # 0.040 izq / 0.240 der, con mas de 1.2 m libres ADELANTE), con el
+      # robot atascado y el camino despejado.
+      #
+      # Medicion que decidio el cambio, con holgura.py y el robot NAVEGANDO
+      # dentro del tramo estrecho (hueco 0.575 m):
+      #     el robot va a 0.250 m de la pared izq y 0.325 de la derecha
+      #     el PLAN  va a 0.166 m de la izq      y 0.409 de la derecha
+      # O sea que el robot esta MEJOR centrado que el camino que le dan: va
+      # corrigiendo hacia el centro y peleando contra su propio plan. Con el
+      # plan pidiendo 0.166 m y un footprint de 0.11, quedan 5 cm de aire
+      # POR DISENO, y cualquier correccion hacia ese lado hace que RPP
+      # aborte con "detected collision ahead".
+      #
+      # Esto descarta la hipotesis alternativa (que el descentrado viniera
+      # del piso de madera irregular): si fuera el piso, el robot apareceria
+      # desviado RESPECTO de su plan, y se ve exactamente lo contrario.
+      cost_travel_multiplier: 5.0
 
 local_costmap:
   local_costmap:
