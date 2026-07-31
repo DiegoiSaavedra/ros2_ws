@@ -16,6 +16,16 @@ bt_navigator:
     use_sim_time: false
     # Archivo instalado por robot_base; evita las recuperaciones con movimiento.
     default_nav_to_pose_bt_xml: "/home/diego/ros2_ws2/ros2_ws/install/robot_base/share/robot_base/behavior_trees/navigate_to_pose_conservative.xml"
+    # 20 -> 200 ms el 30-jul. Es el plazo que espera el arbol a que el
+    # servidor de accion ACUSE RECIBO de un goal, no lo que tarda en
+    # planificar: no cambia en nada como navega. Con el default de 20 ms un
+    # goal murio a los 21.5 ms (bt_action_node.hpp:224-231, "Timed out while
+    # waiting for action server to acknowledge goal request for
+    # compute_path_to_pose") sin llegar a calcular ni una ruta, simplemente
+    # porque la Pi estaba cargada en ese instante. Dando el goal a mano se
+    # arregla repitiendo; en una prueba automatica de ida y vuelta no hay
+    # nadie repitiendo y el ciclo se corta solo.
+    default_server_timeout: 200
 
 behavior_server:
   ros__parameters:
@@ -142,6 +152,21 @@ planner_server:
       tolerance: 0.125
       use_astar: true
       allow_unknown: true
+      # MEDIDO el 30-jul con el robot parado donde acababa de fallar, en el
+      # paso estrecho: hueco 0.500 m (cinta: 47.5), aire libre 0.040 m a la
+      # IZQUIERDA y 0.240 m a la derecha, y mas de 1.2 m libres adelante. O
+      # sea que el robot iba 10 cm descentrado, rozando una pared, con
+      # espacio de sobra del otro lado. Con 4 cm de aire cualquier
+      # proyeccion de RPP toca pared y aborta ("detected collision ahead").
+      #
+      # Este parametro es lo que hace que el SmacPlanner2D se aparte de las
+      # zonas de coste alto. Estaba en su default 1.0, que la propia
+      # documentacion describe como el ajuste "to optimize for speed" y el
+      # que menos centra en pasillos ("larger values will place in the
+      # center of aisles more exactly"). Para un robot de 22 cm en un paso
+      # de 50 cm, centrar no es un lujo: son 14 cm de aire por lado en vez
+      # de 4. Cuesta algo mas de CPU al planificar.
+      cost_travel_multiplier: 3.0
 
 local_costmap:
   local_costmap:

@@ -1,9 +1,10 @@
 <!--
   Conservative NavigateToPose tree.
   Replans at 1 Hz during normal navigation. On a recoverable planning or
-  control failure, it clears both costmaps, retrocede 15 cm y espera, y
-  reintenta la tuberia completa. La marcha atras es la unica recuperacion
-  con movimiento: no hay spin ni giros.
+  control failure, it clears both costmaps, se aparta 15 cm y espera, y
+  reintenta la tuberia completa. Apartarse es primero marcha atras y, si eso
+  esta bloqueado, hacia adelante (ver el Fallback "ApartarseComoSePueda").
+  Sigue sin haber spin ni giros de recuperacion.
 -->
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -62,7 +63,38 @@
               Con 0.10 el PWM sube a 187, que si tiene autoridad para romper
               esa friccion. La distancia se mantiene corta.
             -->
-            <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="10"/>
+            <!--
+              SEGUNDA CARTA, agregada el 30-jul. Lee asi: intenta apartarte
+              hacia atras; si eso esta bloqueado, apartate hacia adelante.
+
+              Medido en el atasco del 30-jul, con el robot parado donde
+              fallo: derecha 0.150 m y atras 0.175 m (las dos tocando, el
+              footprint llega a 0.11 y 0.15), pero ADELANTE 0.975 m y a la
+              IZQUIERDA >1.2 m, o sea libre. Nav2 pidio retroceder y girar a
+              la derecha, el Collision Monitor bloqueo las dos (con razon)
+              y con el BackUp como unica carta el robot se
+              quedo 17 s sin ninguna jugada legal: `cmd_vel_nav` distinto de
+              cero y `cmd_vel_safe` clavado en cero, hasta agotar los
+              reintentos. En el log eso se ve como tres "Exceeded time
+              allowance ... backup failed" seguidos.
+
+              El DriveOnHeading SOLO corre si el BackUp fallo, y el BackUp
+              solo falla cuando la parte de atras esta bloqueada: no es
+              "avanzar contra lo que te freno". Si adelante tambien esta
+              bloqueado, lo para la ApproachZone y quedamos igual que antes
+              de este cambio (la recuperacion falla y el goal muere), asi
+              que el peor caso no empeora nada.
+
+              NO se uso Spin, aunque el plugin esta cargado: en ese atasco la
+              esquina trasera del footprint gira a radio 0.186 m y la pared
+              derecha estaba a 0.150 m, asi que girar en el eje barre contra
+              la pared. De hecho el Collision Monitor ya bloqueo el giro de
+              -0.150 rad/s que Nav2 intento por su cuenta.
+            -->
+            <Fallback name="ApartarseComoSePueda">
+              <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="10"/>
+              <DriveOnHeading dist_to_travel="0.15" speed="0.10" time_allowance="10"/>
+            </Fallback>
             <Wait wait_duration="1.0"/>
           </Sequence>
         </ReactiveFallback>
