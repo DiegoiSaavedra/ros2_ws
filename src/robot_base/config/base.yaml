@@ -22,7 +22,15 @@ base_driver:
     # distintos entre si porque la rueda loca debe reorientarse para pivotar
     # o para invertir la marcha (ver la tabla en safety.py).
     pwm_deadband_drive: 100.0
-    pwm_deadband_reverse: 160.0
+    # 160 -> 100 el 31-jul-2026, mismo razonamiento que el pivote: 160 era el
+    # PWM de ARRANQUE EN FRIO de la marcha atras (la rueda loca barre 180
+    # grados para invertir), y usarlo como deadband gobierna TODO el
+    # retroceso, no solo el primer instante. Ahora el arranque lo cubre el
+    # golpe (wheel_breakaway_on_reverse) y el deadband solo SOSTIENE.
+    # Efecto: el BackUp del BT, que pide 0.10 m/s, pasa de PWM 213 a 187, y
+    # un retroceso lento de 0.05 pasa de 168 a 114 -- que antes no arrancaba
+    # y ahora si, porque el golpe rompe la friccion primero.
+    pwm_deadband_reverse: 100.0
     # 200 -> 100 el 30-jul-2026, al reactivar el golpe (ver wheel_breakaway_*).
     #
     # 200 era el PWM de ARRANQUE EN FRIO del pivote, medido: con 147 no
