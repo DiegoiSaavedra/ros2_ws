@@ -78,6 +78,7 @@ class BaseDriver(Node):
         self.declare_parameter('wheel_breakaway_speed', 0.03)
         self.declare_parameter('wheel_breakaway_samples', 3)
         self.declare_parameter('wheel_breakaway_timeout', 0.25)
+        self.declare_parameter('wheel_breakaway_pivot_only', True)
 
         self.port = self.get_parameter(
             'port').get_parameter_value().string_value
@@ -146,6 +147,8 @@ class BaseDriver(Node):
             'wheel_breakaway_samples').get_parameter_value().integer_value
         self.wheel_breakaway_timeout = self.get_parameter(
             'wheel_breakaway_timeout').get_parameter_value().double_value
+        self.wheel_breakaway_pivot_only = self.get_parameter(
+            'wheel_breakaway_pivot_only').get_parameter_value().bool_value
 
         if self.cmd_vel_timeout != raw_cmd_timeout:
             self.get_logger().error(
@@ -673,6 +676,7 @@ class BaseDriver(Node):
         feedforward_left: int,
         feedforward_right: int,
         now: float,
+        is_pivot: bool,
     ):
         """Devuelve PWM de breakaway, transición o None para control PI."""
         if not self.wheel_breakaway_enabled:
@@ -689,6 +693,22 @@ class BaseDriver(Node):
             self.breakaway_last_feedback_at = None
             self.breakaway_consecutive_samples = 0
             self.breakaway_fault_latched = False
+            return None
+
+        # El golpe se limita al pivote (30-jul-2026). Es el unico arranque
+        # donde el PWM de romper la friccion esta muy por encima del de
+        # mantener el movimiento: 200 contra ~100, porque la rueda loca tiene
+        # que reorientarse 180 grados. En avance el deadband de 100 ya
+        # arranca las dos ruedas, asi que meter 226 ahi no arregla nada y si
+        # cambiaria el comportamiento del pasillo, que quedo validado en
+        # becef4a. No se toca el latch de fallo: solo lo limpia un comando
+        # cero, igual que antes.
+        if self.wheel_breakaway_pivot_only and not is_pivot:
+            self.breakaway_command_active = False
+            self.breakaway_active = False
+            self.breakaway_started_at = None
+            self.breakaway_last_feedback_at = None
+            self.breakaway_consecutive_samples = 0
             return None
 
         if self.breakaway_fault_latched:
@@ -744,15 +764,19 @@ class BaseDriver(Node):
             self.breakaway_consecutive_samples >= self.wheel_breakaway_samples
             and elapsed <= self.wheel_breakaway_timeout
         ):
-            post_left = int(feedforward_left * self.left_feedforward_scale)
-            post_right = int(feedforward_right * self.right_feedforward_scale)
+            # El trim ya viene aplicado SOBRE LA VELOCIDAD dentro del
+            # feedforward (ver cmd_vel_callback). Volver a multiplicarlo aqui
+            # lo aplicaba dos veces: 0.915^2 = 0.837 en la rueda izquierda.
+            # Corregido el 30-jul-2026.
+            post_left = feedforward_left
+            post_right = feedforward_right
             self.breakaway_active = False
             self._publish_breakaway_diagnostic(
                 3, now, measured_left, measured_right,
                 pwm_left_breakaway, pwm_right_breakaway,
                 post_left, post_right)
-            # Primer ciclo posterior sin PI: 196/226, siempre sin salto
-            # ascendente respecto de los 226/226 del breakaway.
+            # El sosten siempre queda por debajo del golpe (226), asi que la
+            # transicion nunca es un salto ascendente de PWM.
             return post_left, post_right
 
         if elapsed >= self.wheel_breakaway_timeout:
@@ -857,7 +881,8 @@ class BaseDriver(Node):
             # reorientarse para pivotar o para invertir la marcha, y eso sube
             # mucho el PWM de arranque (200 y 160 medidos, contra 100 en
             # avance). El calculo puro garantiza que cero sigue en cero.
-            if abs(vx) < 0.02:
+            is_pivot = abs(vx) < 0.02
+            if is_pivot:
                 deadband = self.pwm_deadband_pivot
             elif vx < 0.0:
                 deadband = self.pwm_deadband_reverse
@@ -883,6 +908,7 @@ class BaseDriver(Node):
                 feedforward_left,
                 feedforward_right,
                 control_now,
+                is_pivot,
             )
             if breakaway == "failure":
                 self._publish_pi_diagnostic(

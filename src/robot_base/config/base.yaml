@@ -23,23 +23,24 @@ base_driver:
     # o para invertir la marcha (ver la tabla en safety.py).
     pwm_deadband_drive: 100.0
     pwm_deadband_reverse: 160.0
-    # 200 = PWM de arranque en frio del pivote, medido: con 147 no arranca y
-    # con 200 si. Los 80 y 100 anteriores venian del barrido encadenado, que
-    # medía el PWM de mantenimiento y no el de arranque.
-    pwm_deadband_pivot: 200.0
+    # 200 -> 100 el 30-jul-2026, al reactivar el golpe (ver wheel_breakaway_*).
+    #
+    # 200 era el PWM de ARRANQUE EN FRIO del pivote, medido: con 147 no
+    # arranca y con 200 si. Los 80-100 anteriores venian del barrido
+    # encadenado, que medía el PWM de MANTENIMIENTO. Los dos numeros estaban
+    # bien; el error era usar el de arranque como deadband, porque el
+    # deadband gobierna TODO el pivote y no solo el primer instante.
+    #
+    # Consecuencia medida el 30-jul: con deadband 200 se pidieron 0.5 rad/s y
+    # la base hizo 1.39 rad/s (velocidades de rueda -0.103/+0.099 en el
+    # evento 3 del breakaway). El robot no podia pivotar despacio, se pasaba
+    # de largo y le costaba apuntar a un pasillo.
+    #
+    # Ahora el arranque lo resuelve el golpe de 226 y el deadband solo tiene
+    # que SOSTENER el giro: 100 = ~0.475 rad/s segun la tabla de safety.py.
+    pwm_deadband_pivot: 100.0
     min_wheel_speed: 0.040
     max_wheel_speed: 0.147
-    # Capas experimentales DESACTIVADAS (28-jul-2026). Se vuelve al mapeo
-    # validado PWM = sign(v)*(55 + 950*|v|), sin trim ni lazo cerrado.
-    #
-    # Motivo del apagado de BREAKAWAY: exigia 3 muestras consecutivas
-    # >0.03 m/s dentro de 0.25 s, pero solo puede contar una muestra por
-    # Twist recibido y Nav2 publica a 10 Hz (controller_frequency). En la
-    # ventana entran como maximo 2 conteos (t=0.1 y t=0.2; el ciclo t=0
-    # solo inicializa), asi que el criterio es inalcanzable y cada arranque
-    # terminaba en BREAKAWAY_FAILURE -> parada de seguridad. Haria falta
-    # cmd_vel a >=16 Hz. Esto no dice nada sobre el estado de los motores.
-    #
     # Motivo del apagado de PI y trim: se calibraron con la rueda izquierda
     # floja, ya ajustada. Cualquier asimetria real se vuelve a medir antes
     # de reintroducir correccion.
@@ -57,8 +58,36 @@ base_driver:
     left_feedforward_scale: 0.915
     right_feedforward_scale: 1.00
     wheel_speed_feedback_timeout: 0.15
-    wheel_breakaway_enabled: false
+
+    # GOLPE Y SOSTEN, reactivado el 30-jul-2026 solo para el pivote.
+    #
+    # Por que existe: el PWM de ROMPER la friccion y el de MANTENER el giro
+    # son numeros muy distintos. Arranque en frio del pivote medido en 200
+    # (con 147 no arranca); el barrido encadenado, que medía mantenimiento,
+    # daba 80-100. Sin golpe hay que poner el deadband en el numero de
+    # arranque, y entonces el robot no puede pivotar por debajo de
+    # ~1.27 rad/s: gira de mas y le cuesta apuntar a un pasillo.
+    # El golpe da 226 el tiempo justo para arrancar y despues suelta al PWM
+    # mapeado, que sostiene el giro sin problema.
+    #
+    # Por que estuvo apagado: exigia 3 muestras consecutivas >0.03 m/s dentro
+    # de 0.25 s, pero solo se cuenta UNA muestra por Twist recibido y Nav2
+    # publica a 10 Hz (controller_frequency). En esa ventana entraban como
+    # maximo 2 conteos (t=0.1 y t=0.2; el ciclo t=0 solo inicializa), asi que
+    # el criterio era inalcanzable por aritmetica y cada arranque terminaba
+    # en BREAKAWAY_FAILURE -> parada de seguridad. Nunca dijo nada sobre el
+    # estado de los motores.
+    #
+    # Arreglo: 2 muestras dentro de 0.40 s. A 10 Hz eso da hasta 4 conteos
+    # posibles, o sea margen de sobra. El 0.40 es SOLO la fecha limite de
+    # fallo, no la duracion del golpe: en cuanto llegan las 2 confirmaciones
+    # (~0.2 s) se pasa al sosten.
+    wheel_breakaway_enabled: true
     wheel_breakaway_pwm: 226
     wheel_breakaway_speed: 0.03
-    wheel_breakaway_samples: 3
-    wheel_breakaway_timeout: 0.25
+    wheel_breakaway_samples: 2
+    wheel_breakaway_timeout: 0.40
+    # Solo pivote: en avance el deadband de 100 ya arranca las dos ruedas, y
+    # meter 226 ahi cambiaria el comportamiento del pasillo validado en
+    # becef4a sin arreglar nada.
+    wheel_breakaway_pivot_only: true
