@@ -2,7 +2,29 @@ base_driver:
   ros__parameters:
     port: "/dev/esp32"   # symlink estable (regla udev 99-esp32.rules)
     baud: 115200
-    wheel_radius: 0.035
+    # 0.035 -> 0.034 el 31-jul-2026, MEDIDO por dos caminos que coinciden:
+    # diametro libre 6.8 cm (regla) y distancia del PISO AL CENTRO DEL EJE
+    # con el robot apoyado y con su peso encima, 3.4 cm. Que las dos den lo
+    # mismo dice que el caucho no se aplasta de forma medible, asi que el
+    # radio de rodadura efectivo es limpio.
+    #
+    # Se usa en UN solo lugar, base_driver.py:1048, dentro del calculo de
+    # odometria: dist_per_tick = 2*pi*wheel_radius / ticks_per_revolution.
+    # NO interviene en como se comanda el robot (no aparece en
+    # twist_to_wheel_velocities ni en el mapeo a PWM), asi que el robot hace
+    # exactamente lo mismo: solo reporta mejor lo que hizo.
+    #
+    # Efecto: la odometria sobreestimaba la distancia un 2.9%. Y como
+    # dtheta = (dist_der - dist_izq)/base_width y las dos distancias escalan
+    # con el radio, el giro reportado tambien baja 2.9%: el error que
+    # quedaba tras corregir la trocha pasa de 1.26x a ~1.22x.
+    #
+    # PENDIENTE relacionado: ticks_per_revolution esta en 4532 pero el
+    # conteo a mano del 6-jul dio ~4491 (0.9% menos). Los dos numeros se
+    # multiplican en dist_per_tick, asi que conviene verificarlos juntos
+    # midiendo con cinta cuanto avanza de verdad cuando la odometria dice
+    # 2.00 m, en vez de por separado.
+    wheel_radius: 0.034
     # 0.145 -> 0.175 el 31-jul-2026. MEDIDO CON CINTA: cara externa a cara
     # externa de las dos ruedas 0.200 m, ancho de rueda 0.025 -> trocha de
     # centro a centro 0.175. Coherente con el chasis: el borde externo de la
