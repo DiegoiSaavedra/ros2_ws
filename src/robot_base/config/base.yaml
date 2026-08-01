@@ -19,11 +19,10 @@ base_driver:
     # con el radio, el giro reportado tambien baja 2.9%: el error que
     # quedaba tras corregir la trocha pasa de 1.26x a ~1.22x.
     #
-    # PENDIENTE relacionado: ticks_per_revolution esta en 4532 pero el
-    # conteo a mano del 6-jul dio ~4491 (0.9% menos). Los dos numeros se
-    # multiplican en dist_per_tick, asi que conviene verificarlos juntos
-    # midiendo con cinta cuanto avanza de verdad cuando la odometria dice
-    # 2.00 m, en vez de por separado.
+    # RESUELTO el 1-ago-2026: se midio con cinta cuanto avanza de verdad
+    # cuando la odometria dice 2.00 m, y la correccion se cargo entera en
+    # ticks_per_revolution (ver alla). El radio queda como esta porque es
+    # el unico de los dos que esta MEDIDO.
     wheel_radius: 0.034
     # 0.145 -> 0.175 el 31-jul-2026. MEDIDO CON CINTA: cara externa a cara
     # externa de las dos ruedas 0.200 m, ancho de rueda 0.025 -> trocha de
@@ -47,7 +46,50 @@ base_driver:
     # el mismo comando (rotate_to_heading_angular_vel 0.8 va de PWM 126 a
     # 143), asi que el pasillo hay que revalidarlo.
     base_width: 0.175
-    ticks_per_revolution: 4532
+    # 4532 -> 4363 el 1-ago-2026. MEDIDO: tres corridas de recta.py con
+    # --previo 0 a 0.10 m/s, midiendo con cinta (+-0.5 cm) la distancia
+    # directa entre la marca de salida y la de llegada, contra el
+    # desplazamiento directo de la odometria hypot(avance, lateral):
+    #
+    #   odom 2.011 m -> cinta 2.095 m   +4.2%
+    #   odom 2.004 m -> cinta 2.080 m   +3.8%
+    #   odom 2.008 m -> cinta 2.080 m   +3.6%
+    #                          media    +3.9%
+    #
+    # O sea que la odometria SUBESTIMABA la distancia un 3.9%. 4532/1.039.
+    #
+    # Se descarto que fuera inercia no contada (el script deja de leer
+    # 0.25 s despues de mandar el paro): a la mitad de velocidad la
+    # diferencia habria caido a 4.2 cm (retardo fijo) o 2.1 cm (frenado
+    # constante), y se midieron 6.5 cm. La caja de engranes es
+    # practicamente autofrenante, el robot no rueda libre.
+    #
+    # ESTO ES UNA CONSTANTE DE CALIBRACION, NO UN CONTEO DE TICKS. En esta
+    # prueba wheel_radius y ticks_per_revolution son indistinguibles: solo
+    # entra el producto 2*pi*r/TPR. Dejar 4532 y subir el radio a 0.0353
+    # daria un robot identico. Se eligio mover los ticks porque el radio
+    # esta medido por dos caminos que coinciden y 4532 nunca se midio (el
+    # conteo a mano del 6-jul dio ~4491). Ojo igual: 4532 = 4*11*103 tiene
+    # pinta de encoder real de 11 PPR con caja 103:1, asi que 4363 no
+    # pretende ser el numero fisico.
+    #
+    # Ademas absorbe patinaje: los encoders reportaron 2.28x y 1.33x el
+    # giro que midio el gyro en esas mismas corridas. El patinaje hace
+    # contar distancia de MAS, asi que el error geometrico puro es peor
+    # que 3.9%; 3.9% es lo que hace acertar a la odometria EN PISO, a
+    # 0.10 m/s, con este robot. Que es lo que se busca.
+    #
+    # Donde pega (grep sobre todo el paquete):
+    #   base_driver.py:1048  dist_per_tick, el objetivo
+    #   base_driver.py:1067  measured_left/right_speed suben 3.9%, o sea
+    #                        que el golpe confirma el arranque un poco mas
+    #                        facil contra wheel_breakaway_speed (0.03).
+    #                        Direccion segura: menos BREAKAWAY_FAILURE.
+    #   base_driver.py:1042  max_dticks, guarda de saltos del contador. Se
+    #                        aprieta 3.9% pero es un tope de 5 rev/s.
+    # NO aparece en el mapeo a PWM ni en twist_to_wheel_velocities: el
+    # robot se mueve exactamente igual, solo reporta bien lo que hizo.
+    ticks_per_revolution: 4363
     cmd_vel_timeout: 0.25
     serial_rx_timeout: 0.25
     verbose_serial: false
