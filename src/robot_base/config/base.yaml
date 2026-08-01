@@ -3,7 +3,28 @@ base_driver:
     port: "/dev/esp32"   # symlink estable (regla udev 99-esp32.rules)
     baud: 115200
     wheel_radius: 0.035
-    base_width: 0.145
+    # 0.145 -> 0.175 el 31-jul-2026. MEDIDO CON CINTA: cara externa a cara
+    # externa de las dos ruedas 0.200 m, ancho de rueda 0.025 -> trocha de
+    # centro a centro 0.175. Coherente con el chasis: el borde externo de la
+    # rueda queda a 0.10 m del centro y el footprint declara 0.11 de
+    # semiancho, o sea las ruedas caen 1 cm adentro.
+    #
+    # El 0.145 estaba mal por 21%, y aparece en DOS lugares:
+    #   base_driver.py:1053  dtheta = (dist_der - dist_izq) / base_width
+    #   base_driver.py:907   convierte el omega de Nav2 en vel. de rueda
+    # Consecuencias del valor viejo: la odometria EXAGERABA el giro un 21%,
+    # y el robot giraba ~17% MENOS de lo que se le pedia. Los dos errores se
+    # cancelaban parcialmente en /odom, que mostraba casi el valor
+    # comandado y escondia el problema.
+    #
+    # Medido contra el gyro en la prueba de recta: la odometria de ruedas
+    # exageraba el giro 1.52x y 1.66x. Corrigiendo la trocha queda en 1.26x
+    # y 1.37x -- el resto es PATINAJE real, que ningun parametro arregla.
+    #
+    # OJO al re-testear: los giros pasan a ejecutarse ~21% mas rapido para
+    # el mismo comando (rotate_to_heading_angular_vel 0.8 va de PWM 126 a
+    # 143), asi que el pasillo hay que revalidarlo.
+    base_width: 0.175
     ticks_per_revolution: 4532
     cmd_vel_timeout: 0.25
     serial_rx_timeout: 0.25
