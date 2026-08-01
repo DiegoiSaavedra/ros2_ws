@@ -54,13 +54,19 @@ picos". El L293 mueve 600 mA - 1 A por canal y tiene apagado termico.
 
 ---
 
-## 2. No hay monitoreo de bateria
+## 2. El voltaje de bateria no lo puede leer el software
+
+CORRECCION del 1-ago: la version anterior de este documento decia "no hay
+monitoreo de bateria". Es falso. El robot LLEVA un voltimetro de panel de
+7 segmentos, visible en las fotos del chasis, marcando p.ej. 11.6 V. Lo que
+no existe es lectura POR SOFTWARE: nada de eso llega a un topico ni queda
+registrado junto a las mediciones.
 
 **Por que importa.** Ya causo DOS diagnosticos falsos en dos dias. A 11.7 V
 el robot anda 13% mas lento (0.1069 contra 0.0928 m/s) y eso se le
-atribuyo primero a `base_width` y despues a los tiempos del pasillo. Sin el
-voltaje a la vista no hay forma de saber si una medicion es comparable con
-la anterior.
+atribuyo primero a `base_width` y despues a los tiempos del pasillo. Que el
+numero este a la vista en el chasis no sirve si nadie lo anota: en una
+prueba automatica de 10 tramos no hay quien lo mire.
 
 **Proximo paso.** Divisor resistivo a un pin ADC del S2 y agregarlo a la
 telemetria. Cambia el firmware, o sea que depende del punto 4.
@@ -112,17 +118,83 @@ el PATH), con el core `esp32:esp32@3.3.11`. FQBN
    mantener `0`/BOOT apretado y pulsar RST. No se puede flashear
    remotamente ni desde un script.
 
-Esto bloquea el punto 2 (monitoreo de bateria) y el punto 6 (rampa de PWM).
+Esto bloquea el punto 2 (voltaje de bateria) y el punto 8 (rampa de PWM).
 
 ---
 
-## 5. Bugs menores conocidos
+## 5. El robot roza el obstaculo bajo: el planner solo despeja 11 cm
+
+Con la camara funcionando (1-ago) el robot DETECTA el obstaculo bajo y
+traza un rodeo, pero la curva sale demasiado poco pronunciada y lo roza.
+Se recupera solo, pero lo roza.
+
+**Causa.** `SmacPlanner2D` trata al robot como un PUNTO: no comprueba el
+footprint contra el mapa, solo se niega a entrar en celdas con coste >= 253
+(*inscribed*). Ese radio lo fija el footprint, 0.11 m de semiancho, asi que
+el planificador **solo garantiza despejar 11 cm** del centro de la celda
+marcada. El `inflation_radius` de 0.55 no lo empuja lejos, solo encarece el
+paso sin prohibirlo:
+
+    a 0.15 m del obstaculo el coste todavia es 224 -> el planner pasa
+    a 0.20 m                                    193 -> pasa
+    a 0.25 m                                    166 -> pasa
+
+Y encima la camara marca la CARA DELANTERA del objeto, no su volumen, asi
+que 11 cm desde esa cara no libran el cuerpo entero.
+
+**Proximo paso.** El boton es `cost_travel_multiplier` (hoy 5.0,
+`nav2_params.yaml:188`): sube el peso del coste frente a la distancia, o
+sea cuanto le duele al planner rozar la inflacion. Es el mismo parametro
+que el 31-jul se subio de 3.0 a 5.0 para centrarlo en el paso estrecho.
+OJO: afecta TODAS las rutas, incluida la del paso estrecho que ya cuesta,
+asi que se prueba con el pasillo completo, no solo con el obstaculo.
+
+NO tocar `footprint_padding` para esto: agrandaria el radio inscrito y
+cerraria el paso estrecho, que tiene 0.40 m de hueco para un robot de
+0.26 m (7 cm por lado).
+
+---
+
+## 6. El costmap local acumula marcas con el robot quieto
+
+Medido el 1-ago durante la prueba estatica de la camara: con el robot
+INMOVIL, las celdas letales dentro de 1 m subieron de 104 a 147 a lo largo
+de unos tres minutos, sin que nadie moviera nada en los laterales.
+
+**Por que importa.** Es la sospecha mas firme de por que una corrida del
+pasillo dio 0/3 abortos a las 19:31 y la misma prueba, en las mismas
+condiciones, dio 4/4 cuatro minutos despues: el robot habria arrancado
+encerrado en su propio costmap. El sintoma que lo delata es el tiempo de
+posicionamiento inicial, 17.5 s en la que fallo contra 0.1-3.7 s en las que
+salieron bien.
+
+`observation_persistence`, cuyo razonamiento completo esta en el comentario
+de la fuente `camera` del costmap local en `nav2_params.yaml`, empuja en la
+MISMA direccion: conviene tenerlo presente al tocarlo.
+
+---
+
+## 7. Bugs y ruido conocidos
 
 - **`_reader_loop/read` lanza `TypeError: 'NoneType'`.** Aparece en los
   logs; el manejo de excepciones lo captura (`base_driver.py:531-533`) asi
   que no rompe nada, pero ensucia y esconde el error real.
 - **`Inflation layer not found` al arrancar Nav2.** Error de startup, la
   navegacion funciona igual. Sin diagnosticar.
+- **`Failed to get parameters: parameter 'ApproachZone.max_points' is not
+  initialized`**, cada 15 s. Es RUIDO, no un fallo, y de hecho confirma que
+  se esta usando el parametro correcto: Nav2 1.3.12 declara `max_points`
+  sin valor por defecto para compatibilidad hacia atras, intenta leerlo, y
+  como el config usa `min_points` (el moderno) la lectura falla. El binario
+  lo dice: *"max_points parameter was deprecated. Use min_points instead"*.
+  Sale de `[rclcpp]`, no del collision_monitor, y cada 15 s clavados, o sea
+  que lo dispara alguien enumerando parametros desde afuera --
+  probablemente el poll de `foxglove_bridge`. Comprobable: sin Foxglove no
+  deberia aparecer.
+- **`Message Filter dropping message: frame 'base_laser' ... the timestamp
+  on the message is earlier than all the data in the transform cache`.** Es
+  el LIDAR, no la camara. Aislado, unas pocas veces por sesion, en los dos
+  costmaps. Sin diagnosticar.
 - **Comentario contradictorio en `config/base.yaml`.** El bloque sobre el
   PI dice *"Motivo del apagado de PI y trim"*, pero el trim NUNCA se apago:
   `left_feedforward_scale` sigue en 0.915 y esta activo. Cualquiera que lea
@@ -131,7 +203,7 @@ Esto bloquea el punto 2 (monitoreo de bateria) y el punto 6 (rampa de PWM).
 
 ---
 
-## 6. Rampa de PWM: disenada, sin implementar
+## 8. Rampa de PWM: disenada, sin implementar
 
 La idea es reemplazar el golpe de valor fijo (226) por una BUSQUEDA del
 minimo PWM que rompe la friccion, subiendo escalones hasta que la
@@ -143,7 +215,7 @@ serie a 20 Hz durante el golpe (hoy escribe a la frecuencia de Nav2, 10 Hz).
 
 ---
 
-## 7. La password de sudo es trivial
+## 9. La password de sudo es trivial
 
 Son tres digitos consecutivos. Ya estaba anotada como algo a cambiar en las
 notas del proyecto y sigue igual. No se escribe aca: el repo

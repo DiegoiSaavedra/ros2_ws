@@ -236,6 +236,64 @@ local_costmap:
           data_type: LaserScan
           clearing: true
           marking: true
+          # Agregado el 1-ago-2026 tras verlo fallar en el pasillo: el robot
+          # esquivaba el obstaculo bajo de lejos y le pasaba por encima de
+          # cerca. Hay una BANDA CIEGA de 0.30 m delante del parachoques:
+          #   lente de la camara      0.11 m delante de base_link
+          #   range_min del scan      0.30 m desde el lente
+          #   -> ciega hasta          0.41 m desde base_link
+          #   frente del robot en     0.11 m
+          # Dentro de esa banda no lo ve la camara (por debajo de su
+          # distancia minima) ni el lidar (el objeto esta por debajo de su
+          # plano). Y no es que se congele: el lidar tiene clearing y sus
+          # rayos pasan POR ENCIMA del objeto, asi que raytracea esa celda
+          # como libre y el obstaculo DESAPARECE justo cuando el robot esta
+          # a 30 cm. Nav2 replanifica recto y choca. Medido: la pasada de
+          # las 19:40 choco y tardo 60.9 s contra 22.5-23.0 de las otras.
+          #
+          # observation_persistence hace que el buffer conserve las
+          # observaciones de esta fuente y las RE-MARQUE cada ciclo aunque
+          # no lleguen datos nuevos. Como el marcado corre despues del
+          # clearing dentro del mismo ciclo, la marca sobrevive al raytrace
+          # del lidar.
+          #
+          # ASIMETRICO A PROPOSITO: aca 2.0 y en el costmap global 8.0.
+          # Las dos grillas hacen trabajos distintos:
+          #   global -> decide RODEAR. El planificador planifica sobre ella
+          #             y necesita la memoria; es la que arreglo el choque.
+          #   local  -> solo hace que RPP frene (use_collision_detection).
+          #             Con marcas viejas RPP rechaza comandos validos y se
+          #             dispara la recuperacion.
+          #
+          # Medido el 1-ago con 8.0 en las DOS: el choque desaparecio (el
+          # tramo del objeto paso de 60.9 s chocando a 31.0 s rodeandolo)
+          # pero los tramos limpios se fueron de ~23 s a 30.8-37.5 s y uno
+          # aborto, con recuperaciones en pasillo despejado. Esa es la firma
+          # de los fantasmas: cada lectura de pared se acumula desplazada
+          # por deriva de localizacion y ruido de profundidad, y las paredes
+          # ENGORDAN. Como la recuperacion la dispara el controlador, que
+          # chequea contra el costmap LOCAL, el recorte va aca.
+          #
+          # OJO: el 1-ago tambien se vio al costmap local acumular marcas
+          # sin borrarlas (104 -> 147 celdas letales en 1 m con el robot
+          # QUIETO). La persistencia empuja en la misma direccion.
+          #
+          # Historial de intentos, para no repetirlos:
+          #   0 local / 0 global -> choca, tramo de 60.9 s
+          #   3 local / 0 global -> choca igual, 61.1 s. El razonamiento de
+          #     ponerlo solo en la local era FALSO: se creyo que "el local
+          #     es el que usa el controlador para esquivar de cerca", pero
+          #     RPP es pure pursuit y NO gira para rodear, solo sigue la
+          #     ruta global y frena.
+          #   8 local / 8 global -> no choca (31.0 s) pero se vuelve timido
+          #
+          # Se descartaron: clearing:false en la camara (no sirve, el que
+          # borra es el lidar), bajar range_min (la D435 no puede medir mas
+          # cerca: por debajo de ~0.28 m a resolucion maxima los campos de
+          # vision de los dos sensores IR no se solapan; bajarlo a 0.20
+          # recortaria la banda a 0.31 m pero no la elimina) e inclinar la
+          # camara (no cambia la distancia minima).
+          observation_persistence: 2.0
           max_obstacle_height: 0.40
           obstacle_max_range: 2.5
           raytrace_max_range: 3.0
@@ -297,6 +355,11 @@ global_costmap:
           data_type: LaserScan
           clearing: true
           marking: true
+          # ESTE es el que gobierna si el robot rodea el obstaculo: el
+          # planificador global planifica sobre este costmap y RPP se limita
+          # a seguir esa ruta. Ver la explicacion completa en la fuente
+          # camera del costmap local.
+          observation_persistence: 8.0
           max_obstacle_height: 0.40
           obstacle_max_range: 2.5
           raytrace_max_range: 3.0
