@@ -142,16 +142,38 @@ paso sin prohibirlo:
 Y encima la camara marca la CARA DELANTERA del objeto, no su volumen, asi
 que 11 cm desde esa cara no libran el cuerpo entero.
 
-**Proximo paso.** El boton es `cost_travel_multiplier` (hoy 5.0,
-`nav2_params.yaml:188`): sube el peso del coste frente a la distancia, o
-sea cuanto le duele al planner rozar la inflacion. Es el mismo parametro
-que el 31-jul se subio de 3.0 a 5.0 para centrarlo en el paso estrecho.
-OJO: afecta TODAS las rutas, incluida la del paso estrecho que ya cuesta,
-asi que se prueba con el pasillo completo, no solo con el obstaculo.
+**DESCARTADO: `cost_travel_multiplier`.** Era el candidato obvio (sube el
+peso del coste frente a la distancia, o sea cuanto le duele al planner
+rozar la inflacion) y el mismo que el 31-jul se subio de 3.0 a 5.0 para
+centrarlo en el paso estrecho. Se probo 5.0 -> 10.0 el 1-ago y **salio
+peor en las dos cosas a la vez**, con el mismo objeto en el mismo sitio:
 
-NO tocar `footprint_padding` para esto: agrandaria el radio inscrito y
+     5.0   42.2  39.8  24.6  24.0   4/4
+    10.0   74.2  43.7  21.8  33.7   3/4 (aborto)
+
+Con 10.0 choco repetidamente contra el objeto hasta correrlo de lugar, y
+ademas le costo muchisimo el paso estrecho. Revertido en la misma sesion.
+5.0 ya estaba cerca del optimo. **No reintentarlo sin una idea nueva.**
+
+**DESCARTADO: `footprint_padding`.** Agrandaria el radio inscrito y
 cerraria el paso estrecho, que tiene 0.40 m de hueco para un robot de
 0.26 m (7 cm por lado).
+
+**Proximo paso: sin candidato claro.** El problema es geometrico y los dos
+botones baratos estan quemados. Ideas sin probar, de menor a mayor
+esfuerzo:
+
+1. `cost_scaling_factor` (hoy 3.0). Bajarlo hace que el coste caiga mas
+   despacio con la distancia, o sea aire efectivo mas ancho. Cuesta que hay
+   que cambiarlo en las DOS `inflation_layer` Y en
+   `inflation_cost_scaling_factor` de RPP, que deben coincidir, y afecta
+   tambien la regulacion de velocidad.
+2. Cambiar de planificador a uno que compruebe el footprint de verdad
+   (SmacPlannerHybrid) en vez de tratar al robot como un punto. Es el
+   arreglo de raiz del problema, y el mas caro en CPU.
+3. Subir la camara unos centimetros y/o inclinarla: no cambia la distancia
+   minima, pero si el objeto se ve desde mas arriba, la cara marcada queda
+   mas cerca del centro del objeto y 11 cm de despeje libran mas cuerpo.
 
 ---
 

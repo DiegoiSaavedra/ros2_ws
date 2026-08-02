@@ -185,6 +185,44 @@ planner_server:
       # Esto descarta la hipotesis alternativa (que el descentrado viniera
       # del piso de madera irregular): si fuera el piso, el robot apareceria
       # desviado RESPECTO de su plan, y se ve exactamente lo contrario.
+      #
+      # SE PROBO 10.0 el 1-ago-2026 Y SE REVIRTIO EN LA MISMA SESION.
+      # NO VOLVER A INTENTARLO sin una idea nueva. Motivo del intento: con
+      # la camara andando el robot detecta el obstaculo BAJO y traza un
+      # rodeo, pero la curva sale poco pronunciada y lo roza igual.
+      #
+      # Medido, mismo objeto en el mismo sitio:
+      #    5.0   42.2  39.8  24.6  24.0   4/4
+      #   10.0   74.2  43.7  21.8  33.7   3/4  (aborto)
+      # Con 10.0 fue PEOR en las dos cosas a la vez: choco repetidamente
+      # contra el objeto hasta correrlo de lugar, y ademas le costo
+      # muchisimo el paso estrecho -- que era el riesgo anticipado, porque
+      # el parametro afecta TODAS las rutas y no solo la del obstaculo.
+      # Los tramos limpios de 24 s no se conservaron.
+      #
+      # Lectura: 5.0 ya estaba cerca del optimo que se encontro el 31-jul, y
+      # este NO es el boton para abrir el rodeo. El problema de fondo sigue
+      # siendo geometrico y hay que atacarlo por otro lado (ver
+      # DEUDA_TECNICA.md).
+      #
+      # El motivo del intento era geometrico: SmacPlanner2D trata al robot
+      # como un PUNTO.
+      # No comprueba el footprint contra el mapa, solo se niega a entrar en
+      # celdas con coste >= 253 (inscribed). Ese radio lo fija el footprint,
+      # 0.11 m de semiancho, asi que el planner SOLO GARANTIZA DESPEJAR
+      # 11 cm del centro de la celda marcada. El inflation_radius de 0.55 no
+      # lo empuja lejos: encarece el paso, no lo prohibe.
+      #     a 0.15 m del obstaculo el coste todavia es 224 -> pasa
+      #     a 0.20 m                                    193 -> pasa
+      #     a 0.25 m                                    166 -> pasa
+      # Y la camara marca la CARA DELANTERA del objeto, no su volumen, asi
+      # que 11 cm desde esa cara no libran el cuerpo entero.
+      #
+      # El razonamiento era que este parametro gobierna cuanto le "duele" al
+      # planner rozar la inflacion (el coste por celda es un termino fijo de
+      # traslado mas el multiplicador por el coste normalizado del costmap),
+      # asi que duplicarlo deberia inclinar la balanza hacia rodear. La
+      # medicion dice que no funciona asi en este pasillo.
       cost_travel_multiplier: 5.0
 
 local_costmap:
