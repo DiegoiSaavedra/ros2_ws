@@ -177,22 +177,40 @@ esfuerzo:
 
 ---
 
-## 6. El costmap local acumula marcas con el robot quieto
+## 6. RESUELTO Y DESCARTADO: el costmap local NO acumula marcas de forma
+##    problematica con el robot quieto
 
-Medido el 1-ago durante la prueba estatica de la camara: con el robot
-INMOVIL, las celdas letales dentro de 1 m subieron de 104 a 147 a lo largo
-de unos tres minutos, sin que nadie moviera nada en los laterales.
+Se sospechaba un fallo estructural de limpieza, a partir de que durante la
+prueba estatica de la camara las celdas letales dentro de 1 m subieron de
+104 a 147 en unos tres minutos (+14/min).
 
-**Por que importa.** Es la sospecha mas firme de por que una corrida del
-pasillo dio 0/3 abortos a las 19:31 y la misma prueba, en las mismas
-condiciones, dio 4/4 cuatro minutos despues: el robot habria arrancado
-encerrado en su propio costmap. El sintoma que lo delata es el tiempo de
-posicionamiento inicial, 17.5 s en la que fallo contra 0.1-3.7 s en las que
-salieron bien.
+**Medido de verdad el 2-ago**, con el robot inmovil, el objeto retirado y
+NADIE moviendose alrededor, 7.5 minutos seguidos:
 
-`observation_persistence`, cuyo razonamiento completo esta en el comentario
-de la fuente `camera` del costmap local en `nav2_params.yaml`, empuja en la
-MISMA direccion: conviene tenerlo presente al tocarlo.
+    t= 20 s   ~233 celdas letales en toda la grilla
+    t=150 s   ~243
+    t=300 s   ~245
+    t=450 s   ~252
+
+Unas **+2.5 celdas por minuto** sobre una base de ~240, con oscilacion
+ciclo a ciclo de +-8, o sea mayor que la propia tendencia. **Seis veces mas
+lento que el +14/min que disparo la sospecha**: aquella subida era gente y
+objetos pasando delante del robot, marcados correctamente. El costmap
+estaba haciendo su trabajo.
+
+En un tramo del pasillo de 25 s la deriva equivale a UNA celda. No explica
+nada.
+
+La deriva residual encaja en tamano con la deriva de yaw en reposo ya
+medida (15.8 grados en 30 min = 0.53 grados/min, que a 3 m son ~2.8 cm/min,
+media celda de corrimiento por minuto a lo largo de cada pared). Coherente,
+no probado.
+
+**Lo que queda sin explicar** es el 0/3 del 1-ago a las 19:31, que se le
+habia atribuido a esto. Mismas condiciones, misma prueba, 4/4 cuatro
+minutos despues. El unico sintoma raro que sigue en pie es el tiempo de
+posicionamiento inicial: 17.5 s en la corrida que fallo contra 0.1-3.7 s en
+todas las demas.
 
 ---
 
